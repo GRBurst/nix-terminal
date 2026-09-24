@@ -4,8 +4,11 @@
   self,
   inputs,
   home-manager,
-}: {
+}:
+import ./eval.nix {inherit pkgs self;}
+// {
   leaks = import ./leaks {inherit pkgs self;};
+
   # Every `.nix` file in the tree is Alejandra-formatted.
   formatting = pkgs.runCommand "formatting" {nativeBuildInputs = [pkgs.alejandra];} ''
     cd ${self}
