@@ -148,4 +148,12 @@ in {
       "  enfocadoStyle = \"neon\": ${builtins.toJSON (lib.filter (l: lib.hasInfix "enfocado_style" l) (linesOf neon))}"
       "  theme.enable = false: plugin ${builtins.toJSON (pluginOf off)}, hook ${lib.boolToString (lib.hasInfix "apply_enfocado_mode" offText)}, state file ${lib.boolToString (lib.hasInfix "/my-theme/mode" offText)}"
     ]);
+
+  # S9 proxy, F14: the Nix language server is `nil`.
+  nvf-nix-lsp = let
+    servers = Co.programs.nvf.settings.vim.languages.nix.lsp.servers;
+  in
+    mkCheck "nvf-nix-lsp"
+    (servers == ["nil"])
+    "nvf-nix-lsp: languages.nix.lsp.servers = ${builtins.toJSON servers}, want [\"nil\"]";
 }
