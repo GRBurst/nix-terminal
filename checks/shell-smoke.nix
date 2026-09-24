@@ -107,5 +107,22 @@ in
       done <"$TMPDIR/cc"
     done
 
+    # case dangling (S15, K7, PD13): the store is absent, so the entry
+    # symlinks dangle; the guarded snippet skips them without a word.
+    export HOME=/build/d
+    mkdir -p "$HOME/${entryDir}"
+    for sh in zsh bash; do
+      ln -s /nix/store/00000000000000000000000000000000-absent/init.$sh "$HOME/${entryDir}/init.$sh"
+      cp "${fakeHome}/.''${sh}rc" "$HOME/.''${sh}rc"
+      rc=0; $sh -ic true >"$TMPDIR/out" 2>"$TMPDIR/err" || rc=$?
+      grep -v -e '^bash: cannot set terminal process group (' -e '^bash: no job control in this shell$' \
+        "$TMPDIR/err" >"$TMPDIR/err.kit" || true
+      if [ "$rc" -ne 0 ] || [ -s "$TMPDIR/out" ] || [ -s "$TMPDIR/err.kit" ]; then
+        echo "dangling $sh: exit $rc; stdout, stderr:" >&2
+        cat -v "$TMPDIR/out" "$TMPDIR/err.kit" >&2
+        exit 1
+      fi
+    done
+
     touch $out
   ''
