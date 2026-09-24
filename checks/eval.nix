@@ -71,5 +71,46 @@ in {
     mkCheck "packages-sets"
     (missingCo == [] && missingCt == [] && offendersCt == [] && Co.programs.devenv.enable && !Ct.programs.devenv.enable)
     "packages-sets: missing in Co: ${toString missingCo}; missing in Ct: ${toString missingCt}; dev packages in Ct (P20): ${toString offendersCt}; devenv Co=${lib.boolToString Co.programs.devenv.enable} Ct=${lib.boolToString Ct.programs.devenv.enable}";
+
+  # T4.2. Every tool is on in Cₒ and installs its package. With the tools
+  # switched off (and with the kit disabled) none is on — nix-index
+  # included, which nix-index-database's module turns on by default.
+  tools = let
+    lib = pkgs.lib;
+    # κ.tools name -> Home Manager program
+    hm = {
+      bat = "bat";
+      btop = "btop";
+      lazygit = "lazygit";
+      fzf = "fzf";
+      starship = "starship";
+      zoxide = "zoxide";
+      direnv = "direnv";
+      nixIndex = "nix-index";
+    };
+    user.home = {
+      username = "tester";
+      homeDirectory = "/home/tester";
+      stateVersion = "26.05";
+    };
+    toolsOff =
+      (tk.mkHome [
+        user
+        {
+          programs.terminalKit = {
+            enable = true;
+            tools = lib.mapAttrs (_: _: {enable = false;}) hm;
+          };
+        }
+      ]).config;
+    kitOff = (tk.mkHome [user]).config;
+    outs = map (p: p.outPath) Co.home.packages;
+    notOn = lib.filter (t: !Co.programs.${t}.enable) (lib.attrValues hm);
+    noPkg = lib.filter (t: Co.programs.${t}.enable && !(lib.elem Co.programs.${t}.package.outPath outs)) (lib.attrValues hm);
+    stillOn = c: lib.filter (t: c.programs.${t}.enable) (lib.attrValues hm);
+  in
+    mkCheck "tools"
+    (notOn == [] && noPkg == [] && stillOn toolsOff == [] && stillOn kitOff == [] && Co.programs.direnv.nix-direnv.enable)
+    "tools: off in Co: ${toString notOn}; package missing in Co: ${toString noPkg}; on with tools off: ${toString (stillOn toolsOff)}; on with the kit disabled: ${toString (stillOn kitOff)}; nix-direnv=${lib.boolToString Co.programs.direnv.nix-direnv.enable}";
   # --- end port ---
 }
