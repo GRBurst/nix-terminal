@@ -9,6 +9,11 @@ import ./eval.nix {inherit pkgs self;}
 // {
   leaks = import ./leaks {inherit pkgs self;};
 
+  # Moved unchanged from the consuming flake; only the import paths differ.
+  style-palette = pkgs.callPackage ./style/palette.nix {};
+  style-templates = pkgs.callPackage ./style/templates.nix {};
+  style-base16 = pkgs.callPackage ./style/base16.nix {};
+
   # Every `.nix` file in the tree is Alejandra-formatted.
   formatting = pkgs.runCommand "formatting" {nativeBuildInputs = [pkgs.alejandra];} ''
     cd ${self}

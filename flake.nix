@@ -37,7 +37,10 @@
     system = "x86_64-linux";
     lib = nixpkgs.lib;
     pkgs = nixpkgs.legacyPackages.${system};
+    style = import ./lib/style {inherit lib;};
   in {
+    lib.style = style;
+
     homeModules.default = {
       # A stable key deduplicates the kit itself; nvf and nix-index-database
       # are imported here exactly once (PD3).
