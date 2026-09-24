@@ -166,5 +166,56 @@ in {
       [ "$fail" = 0 ] || exit 1
       touch $out
     '';
+
+  # T4.4a, D22, P19. Identity-dependent git content is written only with
+  # the identity it needs: user.* per value, signing with signingKey,
+  # cycle/mylatest with name, resign*/format.signOff with name and email.
+  # Cₒ has all of it; Cₜ (no identity) none; a name-only config the
+  # name-only part.
+  git-identity = let
+    lib = pkgs.lib;
+    nameOnly =
+      (tk.mkHome [
+        {
+          home = {
+            username = "tester";
+            homeDirectory = "/home/tester";
+            stateVersion = "26.05";
+          };
+          programs.terminalKit = {
+            enable = true;
+            git.name = "tester";
+          };
+        }
+      ]).config;
+    s = c: c.programs.git.settings;
+    aliasNames = c: lib.attrNames ((s c).alias or {});
+    nameAliases = ["cycle" "mylatest"];
+    fullAliases = ["resign" "resign-om" "resign-head"];
+    has = c: names: lib.all (n: lib.elem n (aliasNames c)) names;
+    hasNone = c: names: !(lib.any (n: lib.elem n (aliasNames c)) names);
+    signOff = c: (s c).format.signOff or null;
+    gpg = c: [((s c).commit.gpgsign or null) ((s c).tag.gpgsign or null)];
+    problems =
+      lib.optional (!Co.programs.git.enable) "git off in Co"
+      ++ lib.optional (!(has Co ["st" "lgg" "review"])) "public aliases missing in Co"
+      ++ lib.optional ((s Co).user or null
+        != {
+          name = "tester";
+          email = "tester@example.invalid";
+          signingkey = "DEADBEEF";
+        }) "Co user.* = ${builtins.toJSON ((s Co).user or null)}"
+      ++ lib.optional (gpg Co != [true true]) "Co commit/tag.gpgsign = ${builtins.toJSON (gpg Co)}"
+      ++ lib.optional (signOff Co != true) "Co format.signOff unset"
+      ++ lib.optional (!(has Co (nameAliases ++ fullAliases))) "Co lacks ${toString (nameAliases ++ fullAliases)}"
+      ++ lib.optional ((s Ct) ? user) "Ct user.* = ${builtins.toJSON (s Ct).user}"
+      ++ lib.optional (gpg Ct != [null null]) "Ct commit/tag.gpgsign = ${builtins.toJSON (gpg Ct)}"
+      ++ lib.optional (signOff Ct != null) "Ct format.signOff set"
+      ++ lib.optional (!(hasNone Ct (nameAliases ++ fullAliases))) "Ct has an identity alias"
+      ++ lib.optional ((s nameOnly).user or null != {name = "tester";}) "name-only user.* = ${builtins.toJSON ((s nameOnly).user or null)}"
+      ++ lib.optional (!(has nameOnly nameAliases) || !(hasNone nameOnly fullAliases)) "name-only: wrong identity aliases"
+      ++ lib.optional (signOff nameOnly != null) "name-only format.signOff set";
+  in
+    mkCheck "git-identity" (problems == []) "git-identity: ${lib.concatStringsSep "; " problems}";
   # --- end port ---
 }

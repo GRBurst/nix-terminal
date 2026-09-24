@@ -1,0 +1,49 @@
+set vertical-split      = true
+set tab-size            = 4
+set ignore-space        = all
+set ignore-case         = true # search
+set editor-line-number  = true
+set mouse-scroll        = true
+set show-changes        = true
+set status-show-untracked-dirs = true
+set line-graphics = utf-8
+set refresh-mode = auto
+set log-options  = --show-signature
+set diff-options = --show-signature
+set main-view-date-local = true
+# set reference-format		= [head] [branch] <tag> <local-tag> {remote} ~replace~
+
+color main-local-tag magenta red standout
+
+# NEO
+bind generic ä Quit
+bind generic ü view-close
+bind generic 8 move-up ; NEO right hand analog to arrow up
+bind generic 5 move-down ; NEO right hand analog to arrow down
+
+bind generic g move-first-line
+bind generic G move-last-line
+bind main    G move-last-line ; overwrite default keybinding
+bind main    T !git tag -s
+bind main    W !>git commit --fixup=reword:%(commit)
+# bind main    W !>git commit --fixup=reword:%(commit) && git rebase --autosquash %(commit)^
+bind branch  B !git checkout %(branch)
+bind branch  N !git branch -m %(branch) %(prompt)
+# branch     M !git rebase --onto master %(branch)
+bind generic F !git fetch
+bind generic P !git push
+# bind status  C !git commit --no-gpg-sign
+# bind status  A !git commit --no-gpg-sign --amend
+bind status  C !git commit -S -s
+bind status  A !git commit -S -s --amend
+bind status  s !git stash push %(file)
+bind stage   s !git stash push %(file)
+bind stage   u stage-update-line
+bind stage   <Home> stage-update-line ; NEO AltGr+u
+bind stage   U status-update
+bind status  U status-update
+bind stage   A !git commit -S -s --amend
+bind stage   C !git commit -S -s
+bind stage   P !git stash push -S
+# bind stage   A !git commit --no-gpg-sign --amend
+# bind stage   C !git commit --no-gpg-sign

@@ -109,16 +109,20 @@ in {
         description = "user.name; null writes no identity.";
       };
       email = mkOption {
-        type = types.nullOr types.str;
+        type = types.nullOr (types.strMatching "^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$");
         default = null;
         example = "tester@example.invalid";
         description = "user.email; null writes no identity.";
       };
       signingKey = mkOption {
-        type = types.nullOr types.str;
+        type = types.nullOr (types.strMatching "^[0-9A-Fa-f]{8,40}$");
         default = null;
         example = "DEADBEEF";
-        description = "The signing key; null disables commit and tag signing.";
+        description = ''
+          OpenPGP key id used to sign commits and tags. Per host, because the key
+          lives in that machine's gpg keyring. `null` leaves commits and tags
+          unsigned.
+        '';
       };
       githubUser = mkOption {
         type = types.nullOr types.str;
