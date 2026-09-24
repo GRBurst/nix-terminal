@@ -31,4 +31,11 @@ in
       }
       touch $out
     '';
+
+    # --- misc (T6.2, T8.1) -------------------------------------------
+    mode-command = import ./mode-command.nix {
+      inherit pkgs lib;
+      inherit (tk) Ct;
+    };
+    # --- end misc ----------------------------------------------------
   }

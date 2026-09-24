@@ -172,12 +172,26 @@ in {
     aiSkills = {
       enable = mkEnableOption "agent skill links under ~/.agents/skills and ~/.claude/skills";
       skills = mkOption {
+        # Plain `path`, not a submodule with a per-harness selector: the shared
+        # tree is read by four harnesses at once, so a per-harness subset is
+        # not expressible there anyway. Widening this to
+        # `coercedTo path (p: {source = p;}) (submodule ...)` later is
+        # backward compatible, so the simple type costs nothing.
         type = types.attrsOf types.path;
         default = {};
+        example = lib.literalExpression ''
+          {karpathy-guidelines = ./skills/karpathy-guidelines;}
+        '';
         description = ''
-          Skill directories (each containing SKILL.md) by name. The kit's
-          curated set is defined in config, so entries added here merge
-          with it.
+          Agent skills linked into the shared ~/.agents/skills tree and into
+          ~/.claude/skills.
+
+          The attribute name is the skill directory name and must equal the
+          `name` field of the skill's SKILL.md frontmatter; opencode rejects a
+          mismatch. The value is the directory containing SKILL.md.
+
+          The kit's curated set is defined in config, so entries added here
+          merge with it; an entry can be replaced but not removed.
         '';
       };
     };

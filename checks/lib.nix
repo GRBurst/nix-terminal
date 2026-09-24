@@ -35,6 +35,14 @@
           extraAliases.tk-probe = "status";
         };
         zsh.extraAliases.tk-probe = "true";
+        nvf.extraKeymaps = [
+          {
+            mode = ["n"];
+            key = "<leader>tk";
+            action = "<cmd>echo<cr>";
+            desc = "tk-probe";
+          }
+        ];
         bash.extraAliases.tk-probe = "true";
       };
     }
@@ -56,6 +64,12 @@
 
   Co = ownedHome.config;
   Ct = templateHome.config;
+
+  # Cf: Cₒ with the `file` mode source (T4.9).
+  fileHome = ownedHome.extendModules {
+    modules = [{programs.terminalKit.theme.modeSource = "file";}];
+  };
+  Cf = fileHome.config;
 
   # A failing condition is a build-time failure, so `--keep-going` reports
   # every check instead of stopping at the first eval error.

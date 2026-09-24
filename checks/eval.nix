@@ -4,7 +4,76 @@
   self,
   tk,
 }: let
-  inherit (tk) mkCheck ownedHome templateHome Co Ct;
+  inherit (pkgs) lib;
+  inherit (tk) mkCheck ownedHome templateHome Co Ct Cf fileHome;
+
+  # --- misc (T6.2, T8.1): fixture -------------------------------------
+  # A minimal configuration with the `file` mode source and agent skills
+  # left at their default (off). Local on purpose: the nvf branch adds its own `Cf` to lib.nix;
+  # the two are deduplicated after the merge.
+  fileHomeMisc = tk.mkHome [
+    {
+      home = {
+        username = "tester";
+        homeDirectory = "/home/tester";
+        stateVersion = "26.05";
+      };
+      programs.terminalKit = {
+        enable = true;
+        theme.modeSource = "file";
+      };
+    }
+  ];
+  CfMisc = fileHomeMisc.config;
+  hasPackage = c: name: lib.any (p: lib.getName p == name) c.home.packages;
+
+  # T8.1: the skill directories every skill is linked into (restated, so a
+  # new discovery path is a deliberate edit here too).
+  skillDirs = [".agents/skills" ".claude/skills"];
+  filesByTarget = c:
+    lib.listToAttrs (map (f: {
+      name = f.target;
+      value = f;
+    }) (lib.filter (f: f.enable) (lib.attrValues c.home.file)));
+  skillLinks = c: lib.filter (t: lib.any (d: lib.hasPrefix "${d}/" t) skillDirs) (tk.targets c);
+  sortStrings = lib.sort (a: b: a < b);
+  # Problems with the skill links of configuration `c` (label `l`).
+  skillLinkProblems = l: c: let
+    names = lib.attrNames c.programs.terminalKit.aiSkills.skills;
+    files = filesByTarget c;
+    expected = lib.concatMap (d: map (n: "${d}/${n}") names) skillDirs;
+    missing = lib.filter (t: !(files ? ${t})) expected;
+    extra = lib.subtractLists expected (skillLinks c);
+    # P3: nothing under ~/.claude but ~/.claude/skills/<name> links.
+    claudeOther = lib.filter (t: lib.hasPrefix ".claude" t && !(lib.hasPrefix ".claude/skills/" t)) (tk.targets c);
+    # Neither upstream repository root is a skill directory: a linked root
+    # has no SKILL.md at depth 1 (ported from ai-skills-source-nested).
+    suffixOf = n:
+      if n == "xp-clean-code"
+      then "/plugins/xp-clean-code/skills/xp-clean-code"
+      else "/skills/${n}";
+    notNested =
+      lib.filter (
+        n: let
+          f = files.".agents/skills/${n}" or null;
+        in
+          f != null && !(lib.hasSuffix (suffixOf n) "${f.source}")
+      )
+      names;
+  in
+    lib.optional (names == []) "${l}: no skills configured"
+    ++ map (t: "${l}: missing link ${t}") missing
+    ++ map (t: "${l}: unexpected link ${t}") extra
+    ++ map (t: "${l}: ${t} is under .claude but not a skill link (P3)") claudeOther
+    ++ map (n: "${l}: source of ${n} is not the nested upstream skill dir") notNested;
+
+  # T8.1: upstream superpowers skills reviewed and deliberately not linked.
+  # Adding a name here is the review record for that exclusion.
+  superpowersOptOut = [
+    # A meta-skill for debugging the superpowers framework itself.
+    "diagnosing-superpowers"
+  ];
+  # --- end misc fixture ------------------------------------------------
 
   # --- tmpl --- (T9.1, T9.4)
   # The template flake, evaluated offline: its `outputs` function is called
@@ -517,4 +586,166 @@ in {
       touch $out
     '';
   # --- end tmpl ---
+
+  # D23, PD12: the kit's 79 keymaps (the private flake's 80 minus the private
+  # `<leader>vv`) come first, and `nvf.extraKeymaps` follow them.
+  nvf-extra-keymaps = let
+    maps = Co.programs.nvf.settings.vim.keymaps;
+    extra = Co.programs.terminalKit.nvf.extraKeymaps;
+    view = k: {inherit (k) mode key action desc;};
+    kitCount = lib.length maps - lib.length extra;
+    keys = map (k: k.key) maps;
+  in
+    mkCheck "nvf-extra-keymaps"
+    (
+      Co.programs.nvf.enable
+      && extra != []
+      && kitCount == 79
+      && map view (lib.drop kitCount maps) == map view extra
+      && !(lib.elem "<leader>vv" keys)
+    )
+    "nvf-extra-keymaps: want 79 kit keymaps (no <leader>vv), then ${builtins.toJSON (map view extra)}; got keys ${builtins.toJSON keys}";
+
+  # D23, F18: in `file` mode the generated Lua carries the private flake's
+  # theme hook verbatim at the head of its `custom-functions` section, and
+  # vim-enfocado is built exactly as there. The expected values are copied
+  # from the private flake's features/nvf.nix (the consuming flake cannot be
+  # read from here). With `theme.enable = false` neither is shipped.
+  nvf-file-mode = let
+    vim = c: c.programs.nvf.settings.vim;
+    linesOf = c: lib.splitString "\n" (vim c).builtLuaConfigRC;
+    # every index at which `block` occurs in `lines` (linear in `lines`)
+    occurrences = block: lines: let
+      n = lib.length block;
+      starts = lib.filter (i: lib.elemAt lines i == lib.head block) (lib.range 0 (lib.length lines - n));
+    in
+      lib.filter (i: lib.sublist i n lines == block) starts;
+    hook = lib.splitString "\n" ''
+      -- SECTION: custom-functions
+      -- Follow the shared darkman mode state without rebuilding Neovim.
+      local function apply_enfocado_mode()
+        local state_home = vim.env.XDG_STATE_HOME or (vim.env.HOME .. "/.local/state")
+        local mode_file = state_home .. "/my-theme/mode"
+        local ok, lines = pcall(vim.fn.readfile, mode_file)
+        local mode = ok and lines[1] or "light"
+
+        if mode ~= "dark" then
+          mode = "light"
+        end
+
+        vim.o.background = mode
+        vim.g.enfocado_style = "nature"
+        pcall(vim.cmd.colorscheme, "enfocado")
+      end
+
+      apply_enfocado_mode()
+      vim.api.nvim_create_autocmd("Signal", {
+        pattern = "SIGUSR1",
+        callback = apply_enfocado_mode,
+      })
+
+      -- Smart Home: toggle between col 0 and first non-blank'';
+    pin = {
+      pname = "vim-enfocado";
+      version = "unstable-2026-04-29";
+      rev = "2a8fffdff1a20473f0fbacef10f2fb356e039b31";
+      outputHash = "1ircbl87rxn2l7frywg8xr88y63vqkjp0zfk5j5fc5cryvzrzvmk";
+    };
+    pluginOf = c: let
+      p = (vim c).extraPlugins.vim-enfocado.package or null;
+    in
+      if p == null
+      then null
+      else {
+        inherit (p) pname version;
+        inherit (p.src) rev outputHash;
+      };
+    neon =
+      (fileHome.extendModules {
+        modules = [{programs.terminalKit.theme.nvf.enfocadoStyle = "neon";}];
+      }).config;
+    off =
+      (fileHome.extendModules {
+        modules = [{programs.terminalKit.theme.enable = false;}];
+      }).config;
+    L = linesOf Cf;
+    offText = (vim off).builtLuaConfigRC;
+  in
+    mkCheck "nvf-file-mode"
+    (
+      lib.length (occurrences hook L)
+      == 1
+      && pluginOf Cf == pin
+      && lib.filter (l: lib.hasInfix "enfocado_style" l) (linesOf neon) == ["  vim.g.enfocado_style = \"neon\""]
+      && pluginOf off == null
+      && !(lib.hasInfix "apply_enfocado_mode" offText)
+      && !(lib.hasInfix "/my-theme/mode" offText)
+    )
+    (lib.concatStringsSep "\n" [
+      "nvf-file-mode:"
+      "  hook occurrences: ${toString (lib.length (occurrences hook L))} (want 1)"
+      "  hook lines missing: ${builtins.toJSON (lib.filter (l: !(lib.elem l L)) hook)}"
+      "  plugin: ${builtins.toJSON (pluginOf Cf)} (want ${builtins.toJSON pin})"
+      "  enfocadoStyle = \"neon\": ${builtins.toJSON (lib.filter (l: lib.hasInfix "enfocado_style" l) (linesOf neon))}"
+      "  theme.enable = false: plugin ${builtins.toJSON (pluginOf off)}, hook ${lib.boolToString (lib.hasInfix "apply_enfocado_mode" offText)}, state file ${lib.boolToString (lib.hasInfix "/my-theme/mode" offText)}"
+    ]);
+
+  # S9 proxy, F14: the Nix language server is `nil`.
+  nvf-nix-lsp = let
+    servers = Co.programs.nvf.settings.vim.languages.nix.lsp.servers;
+  in
+    mkCheck "nvf-nix-lsp"
+    (servers == ["nil"])
+    "nvf-nix-lsp: languages.nix.lsp.servers = ${builtins.toJSON servers}, want [\"nil\"]";
+
+  # --- misc (T6.2, T8.1) ---------------------------------------------
+
+  # R9: the mode override command exists only with the `terminal` mode
+  # source; with `file`, darkman and my-style-switch own the state file.
+  mode-command-installed =
+    mkCheck "mode-command-installed"
+    (hasPackage Ct "nix-terminal-mode"
+      && hasPackage Co "nix-terminal-mode"
+      && !(hasPackage CfMisc "nix-terminal-mode"))
+    "mode-command-installed: nix-terminal-mode must be in Ct and Co (terminal) and absent from CfMisc (file); got Ct=${lib.boolToString (hasPackage Ct "nix-terminal-mode")} Co=${lib.boolToString (hasPackage Co "nix-terminal-mode")} CfMisc=${lib.boolToString (hasPackage CfMisc "nix-terminal-mode")}";
+
+  # S16, P3, D13: every configured skill is linked into both skill
+  # directories and nothing else is; nothing else lands under ~/.claude;
+  # sources are the nested upstream skill dirs; with aiSkills off (the
+  # default) there is no link at all.
+  ai-skills-links = let
+    problems =
+      skillLinkProblems "Ct" Ct
+      ++ skillLinkProblems "Co" Co
+      ++ map (t: "CfMisc (aiSkills off): unexpected link ${t}") (skillLinks CfMisc)
+      ++ map (t: "CfMisc (aiSkills off): unexpected ${t}")
+      (lib.filter (lib.hasPrefix ".claude") (tk.targets CfMisc));
+  in
+    mkCheck "ai-skills-links" (problems == [])
+    ("ai-skills-links:\n" + lib.concatStringsSep "\n" problems);
+
+  # Every configured skill exists in its upstream input, and no upstream
+  # superpowers skill is left unreviewed (ported from the consuming flake's
+  # ai-skills-upstream-inventory). The linked set is read from the
+  # configuration; the upstream set from the pinned input:
+  #   (a) configured \ upstream              = {}
+  #   (b) upstream \ (configured u optOut)   = {}
+  ai-skills-inventory = let
+    skills = Ct.programs.terminalKit.aiSkills.skills;
+    spRoot = "${self.inputs.superpowers}/skills";
+    upstream =
+      sortStrings (lib.attrNames
+        (lib.filterAttrs (_: t: t == "directory") (builtins.readDir spRoot)));
+    configuredSp = lib.filter (n: "${skills.${n}}" == "${spRoot}/${n}") (lib.attrNames skills);
+    absent = lib.filter (n: !(builtins.pathExists "${skills.${n}}/SKILL.md")) (lib.attrNames skills);
+    unreviewed = lib.subtractLists (configuredSp ++ superpowersOptOut) upstream;
+    problems =
+      lib.optional (skills == {}) "no skills configured"
+      ++ map (n: "configured but absent upstream: ${n}") absent
+      ++ map (n: "unreviewed upstream superpowers skill: ${n} (link it in ai-skills.nix or add it to superpowersOptOut in checks/eval.nix)") unreviewed;
+  in
+    mkCheck "ai-skills-inventory" (problems == [])
+    ("ai-skills-inventory:\n" + lib.concatStringsSep "\n" problems);
+
+  # --- end misc --------------------------------------------------------
 }
