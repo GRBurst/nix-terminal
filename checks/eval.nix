@@ -264,5 +264,23 @@ in {
       ++ lib.optional (tig hooked != base + tigExtra) "tigExtraConfig not appended to tig/config";
   in
     mkCheck "git-hooks" (problems == []) "git-hooks: ${lib.concatStringsSep "; " problems}";
+
+  # T4.5. The public session variables of A.2 are set (with their values)
+  # in Cₒ and Cₜ; none of the desktop ones is.
+  env = let
+    lib = pkgs.lib;
+    public = {
+      EDITOR = "nvim";
+      SUDO_EDITOR = "nvim";
+      VISUAL = "nvim";
+      SBT_OPTS = "-Xms1G -Xmx4G -Xss16M";
+      AUTOSSH_GATETIME = "0";
+    };
+    desktop = ["BROWSER" "_JAVA_AWT_WM_NONREPARENTING" "AWT_TOOLKIT" "QT_QPA_PLATFORMTHEME" "XCURSOR_SIZE" "NIXOS_OZONE_WL"];
+    wrong = c: lib.filter (n: (c.home.sessionVariables.${n} or null) != public.${n}) (lib.attrNames public);
+    desk = c: lib.filter (n: c.home.sessionVariables ? ${n}) desktop;
+  in
+    mkCheck "env" (wrong Co == [] && wrong Ct == [] && desk Co == [] && desk Ct == [])
+    "env: missing or different in Co: ${toString (wrong Co)}; in Ct: ${toString (wrong Ct)}; desktop variables in Co: ${toString (desk Co)}; in Ct: ${toString (desk Ct)}";
   # --- end port ---
 }
