@@ -71,5 +71,12 @@ in
     done
     [ -z "$(zsh -ic 'print -r -- ''${ZDOTDIR-}' 2>/dev/null)" ] || fail "resolve: ZDOTDIR is set"
 
+    # case history (S5 proxy, P11): the history file's directory is
+    # created under $HOME; the shell reports that path as HISTFILE.
+    histfile=$(zsh -ic 'print hi >/dev/null; print -r -- $HISTFILE' 2>/dev/null)
+    [ "$histfile" = ${lib.escapeShellArg CtS.programs.zsh.history.path} ] || fail "history: HISTFILE = $histfile"
+    case $histfile in "$HOME"/*) ;; *) fail "history: $histfile is not under $HOME" ;; esac
+    [ -d "$(dirname "$histfile")" ] || fail "history: $(dirname "$histfile") does not exist"
+
     touch $out
   ''

@@ -771,5 +771,14 @@ in {
   in
     mkCheck "sourced-no-rc-files" (problems == []) "sourced-no-rc-files: ${lib.concatStringsSep "; " problems}";
 
+  # T5.3, P11, F2, R5 (S5 proxy). Cₜ's zsh history file is under $HOME
+  # and resolved at evaluation time (no shell variable in the path).
+  history-path = let
+    p = Ct.programs.zsh.history.path;
+  in
+    mkCheck "history-path"
+    (lib.hasPrefix "${Ct.home.homeDirectory}/" p && !(lib.hasInfix "$" p))
+    "history-path: Ct history.path = ${p}, want an eval-time path under ${Ct.home.homeDirectory}/";
+
   # --- end sourced ---
 }
