@@ -2,7 +2,10 @@
 {
   pkgs,
   self,
-}: {
+  tk,
+}: let
+  inherit (tk) mkCheck ownedHome templateHome Co Ct;
+in {
   # R2, D11, D12, P15: the kit reads neither `osConfig` nor any Stylix
   # option, so it evaluates the same standalone and inside NixOS.
   # `self` is read-only: every write goes to $TMPDIR.
@@ -25,4 +28,20 @@
     esac
     touch $out
   '';
+
+  # R2: both test configurations evaluate down to the activation package,
+  # with no Stylix module anywhere in the evaluation. The option tree is
+  # forced as well: a value is type-checked only when it is read, and a
+  # sub-module may not read every option.
+  configs-evaluate =
+    mkCheck "configs-evaluate"
+    (
+      builtins.isString Co.home.activationPackage.drvPath
+      && builtins.isString Ct.home.activationPackage.drvPath
+      && builtins.deepSeq Co.programs.terminalKit true
+      && builtins.deepSeq Ct.programs.terminalKit true
+      && !(ownedHome.options ? stylix)
+      && !(templateHome.options ? stylix)
+    )
+    "configs-evaluate: a Stylix option is declared in a test configuration";
 }

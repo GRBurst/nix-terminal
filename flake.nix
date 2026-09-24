@@ -50,6 +50,7 @@
       imports = [
         inputs.nvf.homeManagerModules.default
         inputs.nix-index-database.homeModules.nix-index
+        (import ./modules/terminal-kit {inherit inputs style;})
       ];
     };
 
