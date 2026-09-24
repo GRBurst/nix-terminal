@@ -1,0 +1,2 @@
+# expect: :1:user.signingkey DEADBEEFDEADBEEF
+git config user.signingkey DEADBEEFDEADBEEF

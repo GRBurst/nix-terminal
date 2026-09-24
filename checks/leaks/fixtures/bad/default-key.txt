@@ -1,0 +1,2 @@
+# expect: :1:--default-key DEADBEEFDEADBEEF
+gpg --default-key DEADBEEFDEADBEEF --sign file

@@ -1,0 +1,2 @@
+# expect: :1:tester@mail.example.invalid
+# maintainer: tester@mail.example.invalid
