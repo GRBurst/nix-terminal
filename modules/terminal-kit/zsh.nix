@@ -175,6 +175,7 @@ in {
 
           # zsh with pwd in window title
           function precmd {
+              [[ -t 1 ]] || return
               echo -en "\007" # after every command, set the window to urgent, by ringing the bell
               term=$(echo $TERM | grep -Eo '^[^-]+')
               print -Pn "\e]0;$term - zsh %~\a"
@@ -182,6 +183,7 @@ in {
 
           # current command with args in window title
           function preexec {
+              [[ -t 1 ]] || return
               term=$(echo $TERM | grep -Eo '^[^-]+')
               printf "\033]0;%s - %s\a" "$term" "$1"
           }
@@ -191,6 +193,27 @@ in {
           zle -N edit-command-line
           bindkey -M vicmd "^v" edit-command-line
           bindkey -M viins "^v" edit-command-line
+
+          # Cursor shape per vi keymap (DECSCUSR `CSI Ps SP q`): 1 = block in
+          # command mode, 5 = beam in insert mode, for every new line, at
+          # start-up and when a command starts.
+          if [[ -t 1 ]]; then
+            zle-keymap-select() {
+              case $KEYMAP in
+                vicmd) printf '\e[1 q' ;;
+                viins | main) printf '\e[5 q' ;;
+              esac
+            }
+            zle-line-init() {
+              zle -K viins
+              printf '\e[5 q'
+            }
+            zle -N zle-keymap-select
+            zle -N zle-line-init
+            printf '\e[5 q'
+            # This preexec replaces the title preexec above, as it always has.
+            preexec() { printf '\e[5 q'; }
+          fi
 
           # map HOME/END in vi mode
           # https://github.com/jeffreytse/zsh-vi-mode/issues/59#issuecomment-862729015
@@ -210,19 +233,21 @@ in {
           export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 
           # colorize manpages
-          export LESS_TERMCAP_mb="$(tput bold; tput setaf 6)";
-          export LESS_TERMCAP_md="$(tput bold; tput setaf 2)";
-          export LESS_TERMCAP_me="$(tput sgr0)";
-          export LESS_TERMCAP_so="$(tput bold; tput setaf 0; tput setab 6)";
-          export LESS_TERMCAP_se="$(tput rmso; tput sgr0)";
-          export LESS_TERMCAP_us="$(tput smul; tput bold; tput setaf 3)";
-          export LESS_TERMCAP_ue="$(tput rmul; tput sgr0)";
-          export LESS_TERMCAP_mr="$(tput rev)";
-          export LESS_TERMCAP_mh="$(tput dim)";
-          export LESS_TERMCAP_ZN="$(tput ssubm)";
-          export LESS_TERMCAP_ZV="$(tput rsubm)";
-          export LESS_TERMCAP_ZO="$(tput ssupm)";
-          export LESS_TERMCAP_ZW="$(tput rsupm)";
+          if [[ -t 1 ]]; then
+            export LESS_TERMCAP_mb="$(tput bold; tput setaf 6)";
+            export LESS_TERMCAP_md="$(tput bold; tput setaf 2)";
+            export LESS_TERMCAP_me="$(tput sgr0)";
+            export LESS_TERMCAP_so="$(tput bold; tput setaf 0; tput setab 6)";
+            export LESS_TERMCAP_se="$(tput rmso; tput sgr0)";
+            export LESS_TERMCAP_us="$(tput smul; tput bold; tput setaf 3)";
+            export LESS_TERMCAP_ue="$(tput rmul; tput sgr0)";
+            export LESS_TERMCAP_mr="$(tput rev)";
+            export LESS_TERMCAP_mh="$(tput dim)";
+            export LESS_TERMCAP_ZN="$(tput ssubm)";
+            export LESS_TERMCAP_ZV="$(tput rsubm)";
+            export LESS_TERMCAP_ZO="$(tput ssupm)";
+            export LESS_TERMCAP_ZW="$(tput rsupm)";
+          fi
           export GROFF_NO_SGR=1;
 
           cdg() {

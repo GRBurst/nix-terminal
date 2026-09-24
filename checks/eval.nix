@@ -340,5 +340,52 @@ in {
       ++ lib.optional (!initAfter) "κ.zsh.extraInit is not after the kit's initContent";
   in
     mkCheck "zsh-hooks" (problems == []) "zsh-hooks: ${lib.concatStringsSep "; " problems}";
+
+  # T4.7, F17, R5. Terminal-only output in Cₒ's initContent (cursor-shape
+  # and title escapes, the bell, tput) runs only with a terminal on
+  # stdout: every such line lies inside an `if [[ -t 1 ]]; then … fi`
+  # block, or follows `[[ -t 1 ]] || return` in its function. Line-based
+  # scan (splitString, hasInfix), no regex.
+  zsh-tty-guard = let
+    lib = pkgs.lib;
+    patterns = ["echo -ne '\\e[" "echo -ne \"\\e[" "printf '\\e[" "(tput " "\\007" "\\e]0;" "\\033]0;"];
+    isOutput = t: lib.any (p: lib.hasInfix p t) patterns;
+    isIf = t: lib.hasPrefix "if " t && lib.hasSuffix "then" t;
+    step = s: line: let
+      t = lib.trim line;
+      bad = isOutput t && s.guard == 0 && !s.fn;
+    in {
+      guard =
+        if s.guard > 0
+        then
+          (
+            if isIf t
+            then s.guard + 1
+            else if t == "fi"
+            then s.guard - 1
+            else s.guard
+          )
+        else if t == "if [[ -t 1 ]]; then"
+        then 1
+        else 0;
+      fn =
+        if t == "[[ -t 1 ]] || return"
+        then true
+        else if t == "}"
+        then false
+        else s.fn;
+      bad = s.bad ++ lib.optional bad t;
+    };
+    result = lib.foldl' step {
+      guard = 0;
+      fn = false;
+      bad = [];
+    } (lib.splitString "\n" Co.programs.zsh.initContent);
+    # The scan must see the lines it guards: at least the start-up cursor
+    # escape and the LESS_TERMCAP tput calls.
+    seen = lib.filter isOutput (lib.splitString "\n" Co.programs.zsh.initContent);
+  in
+    mkCheck "zsh-tty-guard" (result.bad == [] && lib.length seen >= 14)
+    "zsh-tty-guard: unguarded terminal output: ${lib.concatStringsSep " | " result.bad} (lines matched: ${toString (lib.length seen)})";
   # --- end port ---
 }
