@@ -24,30 +24,35 @@
   aliases = lib.attrNames CtS.programs.zsh.shellAliases;
   entryDir = ".config/terminal-kit";
   snippet = sh: ''if [ -r "$HOME/${entryDir}/init.${sh}" ]; then . "$HOME/${entryDir}/init.${sh}"; fi'';
-in
-  pkgs.runCommand "sourced-shell-smoke" {
-    nativeBuildInputs = [pkgs.zsh pkgs.bashInteractive pkgs.coreutils pkgs.gnugrep pkgs.gawk];
-  } ''
-    set -euo pipefail
-    if [ "$NIX_BUILD_TOP" != /build ]; then
-      echo "sourced-shell-smoke: needs the sandbox build directory /build (got $NIX_BUILD_TOP)" >&2
-      exit 1
-    fi
-    fail() { printf 'sourced-shell-smoke: %s\n' "$*" >&2; exit 1; }
+  # A check running `body` in the fake $HOME: the image's rc files are
+  # reduced to the one-time snippets.
+  inFakeHome = name: body:
+    pkgs.runCommand name {
+      nativeBuildInputs = [pkgs.zsh pkgs.bashInteractive pkgs.coreutils pkgs.gnugrep pkgs.gawk];
+    } ''
+      set -euo pipefail
+      if [ "$NIX_BUILD_TOP" != /build ]; then
+        echo "${name}: needs the sandbox build directory /build (got $NIX_BUILD_TOP)" >&2
+        exit 1
+      fi
+      fail() { printf '${name}: %s\n' "$*" >&2; exit 1; }
+      mkhome() {
+        mkdir -p "$1"
+        cp -rs --no-preserve=mode ${CtS.home-files}/. "$1"/
+        ln -s ${CtS.home.path} "$1/.nix-profile"
+        printf '%s\n' ${lib.escapeShellArg (snippet "zsh")} >"$1/.zshrc"
+        printf '%s\n' ${lib.escapeShellArg (snippet "bash")} >"$1/.bashrc"
+      }
+      export HOME=${fakeHome} USER=${CtS.home.username}
+      unset TERM ZDOTDIR
+      mkhome "$HOME"
+      cd "$HOME"
 
-    # A fake $HOME from the Home Manager outputs, plus the image's rc files
-    # reduced to the one-time snippets.
-    mkhome() {
-      mkdir -p "$1"
-      cp -rs --no-preserve=mode ${CtS.home-files}/. "$1"/
-      ln -s ${CtS.home.path} "$1/.nix-profile"
-      printf '%s\n' ${lib.escapeShellArg (snippet "zsh")} >"$1/.zshrc"
-      printf '%s\n' ${lib.escapeShellArg (snippet "bash")} >"$1/.bashrc"
-    }
-    export HOME=${fakeHome} USER=${CtS.home.username}
-    unset TERM ZDOTDIR
-    mkhome "$HOME"
-    cd "$HOME"
+      ${body}
+      touch $out
+    '';
+in {
+  sourced-shell-smoke = inFakeHome "sourced-shell-smoke" ''
 
     zsh -n "$HOME/${entryDir}/init.zsh" || fail "zsh -n init.zsh"
     zsh -n "$HOME/${entryDir}/zsh/.zshrc" || fail "zsh -n <dotDir>/.zshrc"
@@ -123,6 +128,33 @@ in
         exit 1
       fi
     done
+  '';
 
-    touch $out
-  ''
+  # T7.3, PD8, R15 (S29 proxy). In Cₜ (osc52) zsh's vi yank widgets send
+  # the cut buffer to the terminal clipboard: `_tk_osc52` writes
+  # OSC 52 with a one-line base64 payload to $TERMINAL_KIT_OSC52_TTY.
+  zsh-osc52-encode = inFakeHome "zsh-osc52-encode" ''
+    export TERMINAL_KIT_OSC52_TTY=$TMPDIR/tty
+    # stdout goes to /dev/null: the builder's own stdout may be a terminal,
+    # which would run the terminal-only start-up output.
+
+    # short input: byte for byte
+    zsh -ic '_tk_osc52 abc' >/dev/null 2>"$TMPDIR/err" || fail "short: exit $? ($(cat "$TMPDIR/err"))"
+    printf '\e]52;c;YWJj\a' >"$TMPDIR/want"
+    cmp -s "$TMPDIR/tty" "$TMPDIR/want" || fail "short: got $(cat -v "$TMPDIR/tty"), want $(cat -v "$TMPDIR/want")"
+
+    # 200 bytes: base64 longer than one line (76), the payload has no newline
+    long=$(head -c 200 /dev/zero | tr '\0' x)
+    rm -f "$TMPDIR/tty"
+    zsh -ic "_tk_osc52 $long" >/dev/null 2>"$TMPDIR/err" || fail "long: exit $? ($(cat "$TMPDIR/err"))"
+    printf '\e]52;c;%s\a' "$(printf %s "$long" | base64 -w 0)" >"$TMPDIR/want"
+    cmp -s "$TMPDIR/tty" "$TMPDIR/want" || fail "long: got $(cat -v "$TMPDIR/tty"), want $(cat -v "$TMPDIR/want")"
+    [ "$(tr -cd '\n' <"$TMPDIR/tty" | wc -c)" -eq 0 ] || fail "long: newline in the payload"
+
+    # the three vi yank widgets are the kit's
+    for w in vi-yank vi-yank-eol vi-yank-whole-line; do
+      got=$(zsh -ic "zmodload zsh/zleparameter; print -r -- \''${widgets[$w]}" 2>/dev/null)
+      [ "$got" = "user:_tk-$w" ] || fail "widget $w is '$got', want 'user:_tk-$w'"
+    done
+  '';
+}

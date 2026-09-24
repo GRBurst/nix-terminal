@@ -40,10 +40,14 @@ in
     # --- end misc ----------------------------------------------------
 
     # --- sourced (group 5, T7.3) ---
-    sourced-shell-smoke = import ./shell-smoke.nix {
-      inherit pkgs lib;
-      inherit (tk) templateHome;
-    };
+    inherit
+      (import ./shell-smoke.nix {
+        inherit pkgs lib;
+        inherit (tk) templateHome;
+      })
+      sourced-shell-smoke
+      zsh-osc52-encode
+      ;
     snippet-check = import ./snippet-check.nix {
       inherit pkgs lib;
       inherit (tk) Ct Co;

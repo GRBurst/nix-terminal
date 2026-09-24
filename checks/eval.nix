@@ -780,5 +780,19 @@ in {
     (lib.hasPrefix "${Ct.home.homeDirectory}/" p && !(lib.hasInfix "$" p))
     "history-path: Ct history.path = ${p}, want an eval-time path under ${Ct.home.homeDirectory}/";
 
+  # T7.3, R15. zsh-system-clipboard is not loaded with clipboard = "osc52"
+  # (Cₜ), and still is with "system" (Cₒ); the OSC 52 widget is in
+  # Cₜ's zsh init and not in Cₒ's.
+  zsh-osc52-plugins = let
+    plugins = c: map (p: p.name) c.programs.zsh.plugins;
+    widget = c: lib.hasInfix "_tk_osc52()" c.programs.zsh.initContent;
+    problems =
+      lib.optional (lib.elem "zsh-system-clipboard" (plugins Ct)) "Ct (osc52) loads zsh-system-clipboard"
+      ++ lib.optional (!(lib.elem "zsh-system-clipboard" (plugins Co))) "Co (system) lacks zsh-system-clipboard"
+      ++ lib.optional (!(widget Ct)) "Ct (osc52) lacks the OSC 52 widget"
+      ++ lib.optional (widget Co) "Co (system) has the OSC 52 widget";
+  in
+    mkCheck "zsh-osc52-plugins" (problems == []) "zsh-osc52-plugins: ${lib.concatStringsSep "; " problems}";
+
   # --- end sourced ---
 }

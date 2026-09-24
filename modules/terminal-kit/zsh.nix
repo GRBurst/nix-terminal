@@ -6,6 +6,16 @@
   ...
 }: let
   cfg = config.programs.terminalKit;
+  # clipboard = "osc52" (R15, Snippet 10): the vi yank widgets also send
+  # the cut buffer to the terminal clipboard. The target is overridable
+  # for tests (PD8).
+  osc52Widget = ''
+    _tk_osc52() { printf '\e]52;c;%s\a' "$(printf '%s' "$1" | ${pkgs.coreutils}/bin/base64 | ${pkgs.coreutils}/bin/tr -d '\n')" > "''${TERMINAL_KIT_OSC52_TTY:-/dev/tty}"; }
+    for w in vi-yank vi-yank-eol vi-yank-whole-line; do
+      eval "_tk-$w() { zle .$w; _tk_osc52 \"\$CUTBUFFER\" }"
+      zle -N $w _tk-$w
+    done
+  '';
 in {
   config = lib.mkIf (cfg.enable && cfg.zsh.enable) {
     programs.zsh = {
@@ -418,6 +428,7 @@ in {
               done
           }
         ''
+        + lib.optionalString (cfg.clipboard == "osc52") ("\n" + osc52Widget)
         + lib.optionalString (cfg.zsh.extraInit != "") ("\n" + cfg.zsh.extraInit);
 
       # zsh-system-clipboard talks to the X11/Wayland clipboard: only with
