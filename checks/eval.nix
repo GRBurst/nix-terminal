@@ -275,4 +275,28 @@ in {
     ("ai-skills-inventory:\n" + lib.concatStringsSep "\n" problems);
 
   # --- end misc --------------------------------------------------------
+
+  # --- nvim2 (T7.1) ----------------------------------------------------
+
+  # R15, D19, S27 proxy: with `clipboard = "osc52"` (Ct) Neovim copies
+  # through the OSC 52 provider and never sends a read query; no X11 or
+  # Wayland clipboard tool is installed. `system` (Co) keeps the tools.
+  clipboard-osc52-eval = let
+    vim = c: c.programs.nvf.settings.vim;
+    lua = c: (vim c).builtLuaConfigRC;
+    tools = ["xclip" "wl-clipboard" "xsel"];
+    toolsOf = c: lib.filter (n: lib.elem n tools) (map lib.getName (vim c).extraPackages);
+    problems =
+      lib.optional (!(lib.hasInfix "vim.ui.clipboard.osc52" (lua Ct))) "Ct: Lua lacks vim.ui.clipboard.osc52"
+      ++ lib.optional (lib.hasInfix ".paste(" (lua Ct)) "Ct: Lua contains a .paste( call (an OSC 52 read query)"
+      ++ map (n: "Ct: nvf extraPackages contain ${n}") (toolsOf Ct)
+      ++ lib.optional ((vim Ct).clipboard.registers != "unnamedplus") "Ct: clipboard.registers = ${builtins.toJSON (vim Ct).clipboard.registers}, want unnamedplus"
+      ++ lib.optional (toolsOf Co != ["wl-clipboard" "xclip"]) "Co: nvf clipboard tools ${builtins.toJSON (toolsOf Co)}, want [wl-clipboard, xclip]"
+      ++ lib.optional ((vim Co).clipboard.registers != "unnamedplus") "Co: clipboard.registers = ${builtins.toJSON (vim Co).clipboard.registers}, want unnamedplus"
+      ++ lib.optional (lib.hasInfix "vim.ui.clipboard.osc52" (lua Co)) "Co (system): Lua contains vim.ui.clipboard.osc52";
+  in
+    mkCheck "clipboard-osc52-eval" (problems == [])
+    ("clipboard-osc52-eval:\n" + lib.concatStringsSep "\n" problems);
+
+  # --- end nvim2 -------------------------------------------------------
 }
