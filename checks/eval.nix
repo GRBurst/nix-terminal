@@ -387,5 +387,15 @@ in {
   in
     mkCheck "zsh-tty-guard" (result.bad == [] && lib.length seen >= 14)
     "zsh-tty-guard: unguarded terminal output: ${lib.concatStringsSep " | " result.bad} (lines matched: ${toString (lib.length seen)})";
+
+  # T4.8, P18 for bash. bash is on in Cₒ and Cₜ, and κ.bash.extraAliases
+  # reach programs.bash.shellAliases.
+  bash-aliases = let
+    lib = pkgs.lib;
+    b = c: c.programs.bash;
+  in
+    mkCheck "bash-aliases"
+    ((b Co).enable && (b Ct).enable && ((b Co).shellAliases.tk-probe or null) == "true")
+    "bash-aliases: bash Co=${lib.boolToString (b Co).enable} Ct=${lib.boolToString (b Ct).enable}; Co tk-probe = ${builtins.toJSON ((b Co).shellAliases.tk-probe or null)} (want \"true\")";
   # --- end port ---
 }
