@@ -4,6 +4,7 @@
   self,
   tk,
 }: let
+  inherit (pkgs) lib;
   inherit (tk) mkCheck ownedHome templateHome Co Ct;
 in {
   # R2, D11, D12, P15: the kit reads neither `osConfig` nor any Stylix
@@ -44,4 +45,23 @@ in {
       && !(templateHome.options ? stylix)
     )
     "configs-evaluate: a Stylix option is declared in a test configuration";
+
+  # D23, PD12: the kit's 79 keymaps (the private flake's 80 minus the private
+  # `<leader>vv`) come first, and `nvf.extraKeymaps` follow them.
+  nvf-extra-keymaps = let
+    maps = Co.programs.nvf.settings.vim.keymaps;
+    extra = Co.programs.terminalKit.nvf.extraKeymaps;
+    view = k: {inherit (k) mode key action desc;};
+    kitCount = lib.length maps - lib.length extra;
+    keys = map (k: k.key) maps;
+  in
+    mkCheck "nvf-extra-keymaps"
+    (
+      Co.programs.nvf.enable
+      && extra != []
+      && kitCount == 79
+      && map view (lib.drop kitCount maps) == map view extra
+      && !(lib.elem "<leader>vv" keys)
+    )
+    "nvf-extra-keymaps: want 79 kit keymaps (no <leader>vv), then ${builtins.toJSON (map view extra)}; got keys ${builtins.toJSON keys}";
 }

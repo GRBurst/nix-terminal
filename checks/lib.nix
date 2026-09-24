@@ -35,6 +35,14 @@
           extraAliases.tk-probe = "status";
         };
         zsh.extraAliases.tk-probe = "true";
+        nvf.extraKeymaps = [
+          {
+            mode = ["n"];
+            key = "<leader>tk";
+            action = "<cmd>echo<cr>";
+            desc = "tk-probe";
+          }
+        ];
         bash.extraAliases.tk-probe = "true";
       };
     }
