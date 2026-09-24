@@ -41,6 +41,8 @@
   in {
     lib.style = style;
 
+    packages.${system} = import ./packages/alacritty-theme.nix {inherit pkgs lib style;};
+
     homeModules.default = {
       # A stable key deduplicates the kit itself; nvf and nix-index-database
       # are imported here exactly once (PD3).

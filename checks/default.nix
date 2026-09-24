@@ -14,6 +14,12 @@ import ./eval.nix {inherit pkgs self;}
   style-templates = pkgs.callPackage ./style/templates.nix {};
   style-base16 = pkgs.callPackage ./style/base16.nix {};
 
+  alacritty-theme = import ./alacritty-theme.nix {
+    inherit pkgs lib;
+    inherit (self.lib) style;
+    packages = self.packages.${pkgs.stdenv.hostPlatform.system};
+  };
+
   # Every `.nix` file in the tree is Alejandra-formatted.
   formatting = pkgs.runCommand "formatting" {nativeBuildInputs = [pkgs.alejandra];} ''
     cd ${self}
