@@ -176,5 +176,60 @@ in {
     ];
   in
     mkCheck "template-exposes-hm-cli" (problems == []) "template-exposes-hm-cli: ${lib.concatStringsSep "; " problems}";
+
+  # R1. The flake exports exactly R1's output groups (what `nix flake show`
+  # lists), each with R1's members, and the root has the MIT LICENSE (D20).
+  outputs-shape = let
+    lib = pkgs.lib;
+    o = self.outputs;
+    names = s: builtins.attrNames (o.${s} or {});
+    groups = ["checks" "formatter" "homeModules" "lib" "packages" "templates"];
+    themes = ["alacritty-theme-enfocado-dark" "alacritty-theme-enfocado-light"];
+    pkgsOut = o.packages.x86_64-linux or {};
+    notMit = lib.filter (n: (pkgsOut.${n}.meta.license.spdxId or null) != "MIT") (lib.intersectLists themes (builtins.attrNames pkgsOut));
+    licence = builtins.readFile "${self}/LICENSE";
+    problems = failures [
+      [(builtins.attrNames o == groups) "output groups are ${toString (builtins.attrNames o)}, expected ${toString groups}"]
+      [(names "homeModules" == ["default"]) "homeModules: ${toString (names "homeModules")}, expected default"]
+      [(names "lib" == ["style"]) "lib: ${toString (names "lib")}, expected style"]
+      [(names "templates" == ["coder"]) "templates: ${toString (names "templates")}, expected coder"]
+      [(names "packages" == ["x86_64-linux"] && builtins.attrNames pkgsOut == themes) "packages: ${toString (names "packages")} / ${toString (builtins.attrNames pkgsOut)}, expected x86_64-linux / ${toString themes}"]
+      [(notMit == []) "packages without MIT licence metadata: ${toString notMit}"]
+      [(names "checks" == ["x86_64-linux"]) "checks systems: ${toString (names "checks")}"]
+      [(names "formatter" == ["x86_64-linux"] && (o.formatter.x86_64-linux.outPath or null) == pkgs.alejandra.outPath) "formatter.x86_64-linux is not Alejandra"]
+      [(lib.hasPrefix "MIT License\n" licence && lib.hasInfix "Copyright (c) 2026 GRBurst\n" licence) "LICENSE is not the MIT licence of D20"]
+    ];
+  in
+    mkCheck "outputs-shape" (problems == []) "outputs-shape: ${lib.concatStringsSep "; " problems}";
+
+  # R1, §6. Every workflow passes actionlint (with shellcheck for `run:`),
+  # and one runs `nix flake check --keep-going` on every push.
+  ci-workflow-lint =
+    pkgs.runCommand "ci-workflow-lint" {
+      nativeBuildInputs = [pkgs.actionlint pkgs.shellcheck pkgs.yq-go pkgs.jq];
+    } ''
+      cd ${self}
+      wf=.github/workflows/check.yml
+      if [ ! -f "$wf" ]; then
+        echo "ci-workflow-lint: $wf does not exist" >&2
+        exit 1
+      fi
+      actionlint -no-color .github/workflows/*.yml >&2 || {
+        echo "ci-workflow-lint: actionlint failed" >&2
+        exit 1
+      }
+      # `on` as a string, a list or a map; push without branch filters.
+      push=$(yq -o json '.on' "$wf" | jq 'if type == "string" then [.] elif type == "array" then . else to_entries | map(select(.value == null) | .key) end | index("push") != null')
+      if [ "$push" != true ]; then
+        echo "ci-workflow-lint: $wf does not run on every push" >&2
+        exit 1
+      fi
+      runs=$(yq '[.jobs[].steps[].run | select(. != null) | select(test("nix flake check --keep-going"))] | length' "$wf")
+      if [ "$runs" -lt 1 ]; then
+        echo "ci-workflow-lint: no step of $wf runs 'nix flake check --keep-going'" >&2
+        exit 1
+      fi
+      touch $out
+    '';
   # --- end tmpl ---
 }

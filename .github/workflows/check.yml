@@ -1,0 +1,13 @@
+name: check
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # Current majors, checked 2026-09-25: actions/checkout v7 (v7.0.1),
+      # cachix/install-nix-action v31 (v31.11.1).
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - run: nix flake check --keep-going -L
