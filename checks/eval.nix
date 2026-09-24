@@ -282,5 +282,31 @@ in {
   in
     mkCheck "env" (wrong Co == [] && wrong Ct == [] && desk Co == [] && desk Ct == [])
     "env: missing or different in Co: ${toString (wrong Co)}; in Ct: ${toString (wrong Ct)}; desktop variables in Co: ${toString (desk Co)}; in Ct: ${toString (desk Ct)}";
+
+  # T4.6a, P18, F2, R15. zsh is on with the kit's aliases (a sample of
+  # A.1's public rows, the A.15 Q1/Q2 ones included) and κ.zsh.extraAliases
+  # merged in; history goes to κ.zsh.historyPath; dotDir is explicit;
+  # zsh-system-clipboard is loaded only with clipboard = "system" (Cₒ),
+  # not with "osc52" (Cₜ).
+  zsh-hooks = let
+    lib = pkgs.lib;
+    z = c: c.programs.zsh;
+    sample = ["rm" "ls" "cdp" "t" "nd" "ssh" "rcp" "v" "g" "dr" "drps" "has_dns" "won" "serve" "nload"];
+    missing = c: lib.filter (a: !((z c).shellAliases ? ${a})) sample;
+    plugins = c: map (p: p.name) (z c).plugins;
+    problems =
+      lib.optional (!(z Co).enable || !(z Ct).enable) "zsh off"
+      ++ lib.optional (missing Co != []) "Co lacks aliases ${toString (missing Co)}"
+      ++ lib.optional (missing Ct != []) "Ct lacks aliases ${toString (missing Ct)}"
+      ++ lib.optional (((z Co).shellAliases.tk-probe or null) != "true") "Co: κ.zsh.extraAliases.tk-probe not merged"
+      ++ lib.optional ((z Co).shellGlobalAliases.H or null != "| head") "Co: global alias H missing"
+      ++ lib.optional ((z Co).history.path != Co.programs.terminalKit.zsh.historyPath) "Co history.path = ${(z Co).history.path}"
+      ++ lib.optional ((z Ct).history.path != Ct.programs.terminalKit.zsh.historyPath) "Ct history.path = ${(z Ct).history.path}"
+      ++ lib.optional ((z Co).dotDir != "${Co.xdg.configHome}/zsh") "Co dotDir = ${toString (z Co).dotDir}"
+      ++ lib.optional (!(lib.elem "zsh-system-clipboard" (plugins Co))) "Co (system clipboard) lacks zsh-system-clipboard"
+      ++ lib.optional (lib.elem "zsh-system-clipboard" (plugins Ct)) "Ct (osc52) loads zsh-system-clipboard"
+      ++ lib.optional (!(lib.all (p: lib.elem p (plugins Ct)) ["zsh-print-alias" "mill-zsh-completions"])) "Ct lacks a public plugin";
+  in
+    mkCheck "zsh-hooks" (problems == []) "zsh-hooks: ${lib.concatStringsSep "; " problems}";
   # --- end port ---
 }
