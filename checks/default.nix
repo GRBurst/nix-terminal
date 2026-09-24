@@ -44,5 +44,9 @@ in
       inherit pkgs lib;
       inherit (tk) templateHome;
     };
+    snippet-check = import ./snippet-check.nix {
+      inherit pkgs lib;
+      inherit (tk) Ct Co;
+    };
     # --- end sourced ---
   }

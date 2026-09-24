@@ -10,6 +10,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }: let
   cfg = config.programs.terminalKit;
@@ -18,6 +19,22 @@
   home = config.home.homeDirectory;
   dotDir = "${home}/${entryDir}/zsh";
   bashrc = "${entryDir}/bash/bashrc";
+  # R7: prints the one-time snippet for each rc file that lacks it; never
+  # writes. The entry path is what counts, not the whole line (PD13).
+  checkSnippet = pkgs.writeShellApplication {
+    name = "terminal-kit-check-snippet";
+    runtimeInputs = [pkgs.gnugrep];
+    text = ''
+      for sh in zsh bash; do
+        rc="$HOME/.''${sh}rc"; entry="${entryDir}/init.$sh"
+        if ! grep -qF "$entry" "$rc" 2>/dev/null; then
+          # shellcheck disable=SC2016 # $HOME is printed literally, for pasting
+          printf 'terminal-kit: append this line to %s:\n  if [ -r "$HOME/%s" ]; then . "$HOME/%s"; fi\n' "$rc" "$entry" "$entry"
+        fi
+      done
+      exit 0
+    '';
+  };
   sessionVars = "${config.home.profileDirectory}/etc/profile.d/hm-session-vars.sh";
   profileBin = "${config.home.profileDirectory}/bin";
 
@@ -44,6 +61,10 @@ in {
   config = lib.mkIf (cfg.enable && cfg.shellIntegration == "sourced") {
     # zsh.nix sets dotDir at normal priority for `owned`.
     programs.zsh.dotDir = lib.mkForce dotDir;
+
+    home.packages = [checkSnippet];
+    home.activation.terminalKitSnippet =
+      lib.hm.dag.entryAfter ["writeBoundary"] "${lib.getExe checkSnippet}";
 
     home.file = {
       ".zshenv".enable = lib.mkForce false;
