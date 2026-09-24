@@ -54,6 +54,20 @@
       ];
     };
 
+    # --- tmpl ---
+    templates.coder = {
+      path = ./templates/coder;
+      description = "Terminal kit for a Coder workspace (sourced shell integration, OSC 52)";
+      welcomeText = ''
+        # nix-terminal: Coder workspace template
+        1. Edit `user.nix` (user name, home directory, stateVersion) if the defaults do not fit.
+        2. Switch: `nix run .#home-manager -- switch --flake .`
+        3. Append the one-time snippet (see the README of github:GRBurst/nix-terminal)
+           to `~/.zshrc` and `~/.bashrc`.
+      '';
+    };
+    # --- end tmpl ---
+
     checks.${system} = import ./checks {inherit pkgs lib self inputs home-manager;};
     formatter.${system} = pkgs.alejandra;
   };

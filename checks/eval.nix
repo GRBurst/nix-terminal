@@ -5,6 +5,23 @@
   tk,
 }: let
   inherit (tk) mkCheck ownedHome templateHome Co Ct;
+
+  # --- tmpl --- (T9.1, T9.4)
+  # The template flake, evaluated offline: its `outputs` function is called
+  # with stub inputs built from this flake's own inputs, with this flake as
+  # `nix-terminal` (what `follows` resolves to after `nix flake init`).
+  templateDir = "${self}/templates/coder";
+  templateFlakePresent = builtins.pathExists "${templateDir}/flake.nix";
+  templateFlake = import "${templateDir}/flake.nix";
+  templateOutputs = templateFlake.outputs {
+    self = templateOutputs // {outPath = templateDir;};
+    nix-terminal = self;
+    inherit (self.inputs) nixpkgs home-manager;
+  };
+  templateUser = import "${templateDir}/user.nix";
+  # Messages of the failed conditions in `cs` (a list of [cond msg]).
+  failures = cs: map (c: builtins.elemAt c 1) (builtins.filter (c: !(builtins.head c)) cs);
+  # --- end tmpl ---
 in {
   # R2, D11, D12, P15: the kit reads neither `osConfig` nor any Stylix
   # option, so it evaluates the same standalone and inside NixOS.
@@ -113,4 +130,51 @@ in {
     (notOn == [] && noPkg == [] && stillOn toolsOff == [] && stillOn kitOff == [] && Co.programs.direnv.nix-direnv.enable)
     "tools: off in Co: ${toString notOn}; package missing in Co: ${toString noPkg}; on with tools off: ${toString (stillOn toolsOff)}; on with the kit disabled: ${toString (stillOn kitOff)}; nix-direnv=${lib.boolToString Co.programs.direnv.nix-direnv.enable}";
   # --- end port ---
+
+  # --- tmpl --- (T9.1, T9.4)
+
+  # S1 proxy, R17. Cₜ carries R17's settings; the user file has exactly
+  # R17's edits; and the template flake builds exactly Cₜ, so every check
+  # over Cₜ covers what the flake builds (including system x86_64-linux).
+  template-evaluates = let
+    kit = Ct.programs.terminalKit;
+    hc = templateOutputs.homeConfigurations.${templateUser.name} or null;
+    problems = failures [
+      [(builtins.attrNames templateUser == ["homeDirectory" "name" "stateVersion"]) "user.nix has fields ${toString (builtins.attrNames templateUser)}; R17 allows exactly homeDirectory name stateVersion"]
+      [(Ct.home.username == "coder" && Ct.home.homeDirectory == "/home/coder") "user defaults are ${Ct.home.username} ${Ct.home.homeDirectory}, expected coder /home/coder"]
+      [(Ct.home.stateVersion == templateUser.stateVersion) "home.stateVersion is not user.nix's"]
+      [Ct.programs.home-manager.enable "programs.home-manager.enable is off"]
+      [kit.enable "the kit is disabled"]
+      [(kit.shellIntegration == "sourced") "shellIntegration = ${kit.shellIntegration}"]
+      [(kit.clipboard == "osc52") "clipboard = ${kit.clipboard}"]
+      [(kit.theme.modeSource == "terminal") "theme.modeSource = ${kit.theme.modeSource}"]
+      [kit.aiSkills.enable "aiSkills.enable is off"]
+      [(!kit.packages.dev.enable) "packages.dev.enable is on"]
+      [(kit.git.name == null && kit.git.email == null && kit.git.signingKey == null) "a git identity is set (D22)"]
+      [templateFlakePresent "templates/coder/flake.nix does not exist"]
+      [(templateFlakePresent && hc != null) "the template flake has no homeConfigurations.${templateUser.name}"]
+      [(templateFlakePresent && hc != null && hc.activationPackage.drvPath == Ct.home.activationPackage.drvPath) "the template flake's homeConfigurations.${templateUser.name} is not Ct"]
+    ];
+  in
+    mkCheck "template-evaluates" (problems == []) "template-evaluates: ${pkgs.lib.concatStringsSep "; " problems}";
+
+  # S2 proxy, R17. The template pins the home-manager CLI through
+  # nix-terminal's inputs and exposes it as a package, next to the home
+  # configuration named after user.nix.
+  template-exposes-hm-cli = let
+    lib = pkgs.lib;
+    ins = templateFlake.inputs or {};
+    hmCli = ["packages" "x86_64-linux" "home-manager"];
+    problems = failures [
+      [templateFlakePresent "templates/coder/flake.nix does not exist"]
+      [(templateFlakePresent && (ins.nix-terminal.url or null) == "github:GRBurst/nix-terminal") "inputs.nix-terminal.url is not github:GRBurst/nix-terminal"]
+      [(templateFlakePresent && (ins.nixpkgs.follows or null) == "nix-terminal/nixpkgs") "inputs.nixpkgs does not follow nix-terminal/nixpkgs"]
+      [(templateFlakePresent && (ins.home-manager.follows or null) == "nix-terminal/home-manager") "inputs.home-manager does not follow nix-terminal/home-manager"]
+      [(templateFlakePresent && lib.hasAttrByPath hmCli templateOutputs) "packages.x86_64-linux.home-manager is missing"]
+      [(templateFlakePresent && lib.hasAttrByPath hmCli templateOutputs && (lib.getAttrFromPath hmCli templateOutputs).outPath == self.inputs.home-manager.packages.x86_64-linux.home-manager.outPath) "packages.x86_64-linux.home-manager is not the pinned home-manager CLI"]
+      [(templateFlakePresent && builtins.attrNames (templateOutputs.homeConfigurations or {}) == [templateUser.name]) "homeConfigurations is not exactly [${templateUser.name}]"]
+    ];
+  in
+    mkCheck "template-exposes-hm-cli" (problems == []) "template-exposes-hm-cli: ${lib.concatStringsSep "; " problems}";
+  # --- end tmpl ---
 }
