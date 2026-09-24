@@ -19,6 +19,7 @@
   dotDir = "${home}/${entryDir}/zsh";
   bashrc = "${entryDir}/bash/bashrc";
   sessionVars = "${config.home.profileDirectory}/etc/profile.d/hm-session-vars.sh";
+  profileBin = "${config.home.profileDirectory}/bin";
 
   entry = {
     guard,
@@ -30,6 +31,11 @@
     case ":$PATH:" in
       *":$HOME/.nix-profile/bin:"*) ;;
       *) if [[ -r $HOME/.nix-profile/etc/profile.d/nix.sh ]]; then . $HOME/.nix-profile/etc/profile.d/nix.sh; fi ;;
+    esac
+    # The Home Manager profile's bin, when no nix.sh put it on PATH.
+    case ":$PATH:" in
+      *":${profileBin}:"*) ;;
+      *) PATH="${profileBin}:$PATH" ;;
     esac
     . "${sessionVars}"
     . "${rc}"

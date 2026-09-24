@@ -43,8 +43,17 @@ in {
     (lib.mkIf (on "fzf") {
       programs.fzf = {
         enable = true;
-        enableZshIntegration = true;
+        # Home Manager's zsh integration (same order and text, plus the
+        # stdin test): without a terminal on stdin, `fzf --zsh` fails to
+        # restore the `zle` option and prints "can't change option: zle"
+        # at every start (R5).
+        enableZshIntegration = false;
       };
+      programs.zsh.initContent = lib.mkOrder 910 ''
+        if [[ $options[zle] = on && -t 0 ]]; then
+          source <(${lib.getExe config.programs.fzf.package} --zsh)
+        fi
+      '';
     })
     (lib.mkIf (on "nixIndex") {
       programs.nix-index = {

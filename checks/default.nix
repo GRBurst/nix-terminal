@@ -38,4 +38,11 @@ in
       inherit (tk) Ct;
     };
     # --- end misc ----------------------------------------------------
+
+    # --- sourced (group 5, T7.3) ---
+    sourced-shell-smoke = import ./shell-smoke.nix {
+      inherit pkgs lib;
+      inherit (tk) templateHome;
+    };
+    # --- end sourced ---
   }
