@@ -6,8 +6,54 @@
   ...
 }: let
   cfg = config.programs.terminalKit;
+  enfocadoPlugin = pkgs.vimUtils.buildVimPlugin {
+    pname = "vim-enfocado";
+    version = "unstable-2026-04-29";
+    src = pkgs.fetchFromGitHub {
+      owner = "wuelnerdotexe";
+      repo = "vim-enfocado";
+      rev = "2a8fffdff1a20473f0fbacef10f2fb356e039b31";
+      sha256 = "1ircbl87rxn2l7frywg8xr88y63vqkjp0zfk5j5fc5cryvzrzvmk";
+    };
+  };
   # Consumer keymaps come after the kit's (PD12).
   appendExtraKeymaps = kitKeymaps: kitKeymaps ++ cfg.nvf.extraKeymaps;
+
+  # The theme: vim-enfocado and the Lua that sets `background` and applies
+  # it, placed at the head of `custom-functions` as before (D23).
+  withThemePlugins = plugins:
+    lib.optionalAttrs cfg.theme.enable {vim-enfocado.package = enfocadoPlugin;} // plugins;
+  themeLua =
+    if !cfg.theme.enable
+    then ""
+    else if cfg.theme.modeSource == "file"
+    then fileModeLua
+    # `terminal`: T6.1 (Snippet 8) goes here.
+    else "";
+  fileModeLua = ''
+    -- Follow the shared darkman mode state without rebuilding Neovim.
+    local function apply_enfocado_mode()
+      local state_home = vim.env.XDG_STATE_HOME or (vim.env.HOME .. "/.local/state")
+      local mode_file = state_home .. "/my-theme/mode"
+      local ok, lines = pcall(vim.fn.readfile, mode_file)
+      local mode = ok and lines[1] or "light"
+
+      if mode ~= "dark" then
+        mode = "light"
+      end
+
+      vim.o.background = mode
+      vim.g.enfocado_style = ${builtins.toJSON cfg.theme.nvf.enfocadoStyle}
+      pcall(vim.cmd.colorscheme, "enfocado")
+    end
+
+    apply_enfocado_mode()
+    vim.api.nvim_create_autocmd("Signal", {
+      pattern = "SIGUSR1",
+      callback = apply_enfocado_mode,
+    })
+
+  '';
 in {
   config = lib.mkIf (cfg.enable && cfg.nvf.enable) {
     programs.nvf = {
@@ -146,7 +192,7 @@ in {
           };
 
           # --- Extra Plugins ---
-          extraPlugins = {
+          extraPlugins = withThemePlugins {
             vim-repeat.package = pkgs.vimPlugins.vim-repeat;
             vim-speeddating.package = pkgs.vimPlugins.vim-speeddating;
             vim-visual-multi.package = pkgs.vimPlugins.vim-visual-multi;
@@ -744,7 +790,7 @@ in {
 
           # --- Lua Config ---
           luaConfigRC.custom-functions = lib.mkBefore ''
-            -- Smart Home: toggle between col 0 and first non-blank
+            ${themeLua}-- Smart Home: toggle between col 0 and first non-blank
             vim.keymap.set("n", "<Home>", function()
               return vim.fn.col(".") == vim.fn.match(vim.fn.getline("."), "\\S") + 1 and "0" or "^"
             end, { expr = true, silent = true })

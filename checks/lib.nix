@@ -65,6 +65,12 @@
   Co = ownedHome.config;
   Ct = templateHome.config;
 
+  # Cf: Cₒ with the `file` mode source (T4.9).
+  fileHome = ownedHome.extendModules {
+    modules = [{programs.terminalKit.theme.modeSource = "file";}];
+  };
+  Cf = fileHome.config;
+
   # A failing condition is a build-time failure, so `--keep-going` reports
   # every check instead of stopping at the first eval error.
   mkCheck = name: cond: msg:
