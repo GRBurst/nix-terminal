@@ -118,4 +118,45 @@ in {
     [ "$fail" -eq 0 ] || exit 1
     touch $out
   '';
+
+  # S21: a running instance follows `nix-terminal-mode dark` within 1 s.
+  # The real command (from Ct's packages) signals with its own `pkill`.
+  mode-signal = let
+    cmd = lib.findFirst (p: lib.getName p == "nix-terminal-mode") null Ct.home.packages;
+  in
+    if cmd == null
+    then
+      pkgs.runCommand "mode-signal" {} ''
+        echo "mode-signal: nix-terminal-mode is not in Ct's home.packages" >&2
+        exit 1
+      ''
+    else
+      pkgs.runCommand "mode-signal" {nativeBuildInputs = [pkgs.coreutils pkgs.procps];} ''
+        ${prelude}
+        fresh signal
+        sock=$dir/s
+        timeout 60 ${nvim} --headless --listen "$sock" </dev/null >"$dir/stdout" 2>"$dir/stderr" &
+        server=$!
+        for _ in $(seq 200); do [ -S "$sock" ] && break; sleep 0.05; done
+        remote_bg() { ${nvim} --server "$sock" --remote-expr '&background' 2>/dev/null; }
+        before=$(remote_bg)
+        [ "$before" = light ] || bad mode-signal "background before: '$before', want light (no state file)"
+
+        ${cmd}/bin/nix-terminal-mode dark || bad mode-signal "nix-terminal-mode dark: exit $?"
+        [ "$(cat "$state" 2>/dev/null)" = dark ] || bad mode-signal "state file does not contain dark"
+
+        # poll every 50 ms, for at most 1 s of wall-clock time
+        deadline=$(($(date +%s%N) + 1000000000))
+        now=$(remote_bg)
+        while [ "$now" != dark ] && [ "$(date +%s%N)" -lt "$deadline" ]; do
+          sleep 0.05
+          now=$(remote_bg)
+        done
+        [ "$now" = dark ] || bad mode-signal "background still $now after 1 s (stderr: $(cat "$dir/stderr"))"
+
+        kill "$server" 2>/dev/null || true
+        wait "$server" 2>/dev/null || true
+        [ "$fail" -eq 0 ] || exit 1
+        touch $out
+      '';
 }
