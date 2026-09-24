@@ -44,4 +44,32 @@ in {
       && !(templateHome.options ? stylix)
     )
     "configs-evaluate: a Stylix option is declared in a test configuration";
+
+  # --- port --- (group 4: the content port, `owned` mode)
+
+  # D4, P20. The expected sets are Appendix A's names (A.12), not a list the
+  # module exports: the criterion stays independent of the implementation.
+  # Cₒ has every package of both sets and devenv's program; Cₜ (dev off) has
+  # no package of the dev set, except one that an enabled program of the kit
+  # installs itself (direnv is in the dev set and is also `tools.direnv`).
+  packages-sets = let
+    lib = pkgs.lib;
+    general = ["htop" "iotop" "lsof" "wget" "ripgrep" "fd" "tree" "unzip" "zip" "file" "jq"];
+    dev = ["clang" "gnumake" "cmakeCurses" "nodejs" "docker-compose" "direnv" "devenv"];
+    outs = c: map (p: p.outPath) c.home.packages;
+    # The Home Manager programs the kit enables (a literal list: iterating
+    # `c.programs` would force removed-option shims, which throw).
+    kitPrograms = ["bat" "btop" "lazygit" "fzf" "starship" "zoxide" "direnv" "nix-index" "devenv" "yazi" "git" "zsh" "bash"];
+    programPkgs = c:
+      map (p: c.programs.${p}.package.outPath)
+      (lib.filter (p: c.programs.${p}.enable) kitPrograms);
+    missingCo = lib.filter (n: !(lib.elem pkgs.${n}.outPath (outs Co))) (general ++ dev);
+    missingCt = lib.filter (n: !(lib.elem pkgs.${n}.outPath (outs Ct))) general;
+    offendersCt =
+      lib.filter (n: lib.elem pkgs.${n}.outPath (outs Ct) && !(lib.elem pkgs.${n}.outPath (programPkgs Ct))) dev;
+  in
+    mkCheck "packages-sets"
+    (missingCo == [] && missingCt == [] && offendersCt == [] && Co.programs.devenv.enable && !Ct.programs.devenv.enable)
+    "packages-sets: missing in Co: ${toString missingCo}; missing in Ct: ${toString missingCt}; dev packages in Ct (P20): ${toString offendersCt}; devenv Co=${lib.boolToString Co.programs.devenv.enable} Ct=${lib.boolToString Ct.programs.devenv.enable}";
+  # --- end port ---
 }
