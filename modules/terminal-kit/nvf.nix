@@ -28,8 +28,7 @@
     then ""
     else if cfg.theme.modeSource == "file"
     then fileModeLua
-    # `terminal`: T6.1 (Snippet 8) goes here.
-    else "";
+    else terminalModeLua;
   fileModeLua = ''
     -- Follow the shared darkman mode state without rebuilding Neovim.
     local function apply_enfocado_mode()
@@ -51,6 +50,70 @@
     vim.api.nvim_create_autocmd("Signal", {
       pattern = "SIGUSR1",
       callback = apply_enfocado_mode,
+    })
+
+  '';
+  # `terminal` (R8, Snippet 8): the state file wins when it exists, also
+  # over a late terminal reply; otherwise `background` follows the terminal.
+  # The fallback `light` applies only when nothing set `background` before
+  # the config: Neovim's OSC 11 reply usually arrives first (F4). It is set
+  # from Lua, so a later reply still overrides it.
+  terminalModeLua = ''
+    -- Follow the terminal background unless the shared mode state file exists.
+    local enfocado_state = (vim.env.XDG_STATE_HOME or (vim.env.HOME .. "/.local/state")) .. "/my-theme/mode"
+    local function read_enfocado_state()
+      local f = io.open(enfocado_state, "r")
+      if not f then
+        return nil
+      end
+      local m = f:read("*l")
+      f:close()
+      return (m == "light" or m == "dark") and m or nil
+    end
+
+    local function apply_enfocado(bg)
+      if bg then
+        vim.o.background = bg
+      end
+      vim.g.enfocado_style = ${builtins.toJSON cfg.theme.nvf.enfocadoStyle}
+      pcall(vim.cmd.colorscheme, "enfocado")
+    end
+
+    local enfocado_mode = read_enfocado_state()
+    if enfocado_mode then
+      apply_enfocado(enfocado_mode)
+    else
+      if not vim.api.nvim_get_option_info2("background", {}).was_set then
+        vim.o.background = "light"
+      end
+      apply_enfocado(nil)
+    end
+    -- nested: the reapply fires ColorScheme for the plugins that listen.
+    vim.api.nvim_create_autocmd("OptionSet", {
+      pattern = "background",
+      nested = true,
+      callback = function()
+        apply_enfocado(nil)
+      end,
+    })
+    vim.api.nvim_create_autocmd("TermResponse", {
+      callback = function()
+        local s = read_enfocado_state()
+        if s and vim.o.background ~= s then
+          vim.schedule(function()
+            apply_enfocado(s)
+          end)
+        end
+      end,
+    })
+    vim.api.nvim_create_autocmd("Signal", {
+      pattern = "SIGUSR1",
+      callback = function()
+        local s = read_enfocado_state()
+        if s then
+          apply_enfocado(s)
+        end
+      end,
     })
 
   '';

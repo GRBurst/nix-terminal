@@ -54,3 +54,8 @@ in
     };
     # --- end sourced ---
   }
+  # --- nvim2 (T6.1, T6.3, T7.2): headless Neovim; to the end of file -------
+  // import ./nvim.nix {
+    inherit pkgs lib;
+    inherit (tk) Ct;
+  }
