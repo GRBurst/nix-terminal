@@ -112,5 +112,59 @@ in {
     mkCheck "tools"
     (notOn == [] && noPkg == [] && stillOn toolsOff == [] && stillOn kitOff == [] && Co.programs.direnv.nix-direnv.enable)
     "tools: off in Co: ${toString notOn}; package missing in Co: ${toString noPkg}; on with tools off: ${toString (stillOn toolsOff)}; on with the kit disabled: ${toString (stillOn kitOff)}; nix-direnv=${lib.boolToString Co.programs.direnv.nix-direnv.enable}";
+
+  # T4.3, R8. Cₒ's yazi flavor files are lib.style's enfocado flavors
+  # (expected value derived from `mkYaziFlavor`, compared as parsed TOML),
+  # the theme selects them per mode, and κ.yazi.flavorOverrides merges
+  # into the one mode it names.
+  yazi-flavors = let
+    lib = pkgs.lib;
+    inherit (self.lib) style;
+    withOverride =
+      (tk.mkHome [
+        {
+          home = {
+            username = "tester";
+            homeDirectory = "/home/tester";
+            stateVersion = "26.05";
+          };
+          programs.terminalKit = {
+            enable = true;
+            yazi.flavorOverrides.light.mgr.cwd.fg = "#123456";
+          };
+        }
+      ]).config;
+    y = Co.programs.yazi;
+    evalOk =
+      y.enable
+      && y.shellWrapperName == "yy"
+      && y.enableZshIntegration
+      && y.theme.flavor
+      == {
+        dark = "enfocado-dark";
+        light = "enfocado-light";
+      };
+    compare = v: ''
+      toml2json ${y.flavors."enfocado-${v}"}/flavor.toml | jq -S . >got-${v}.json
+      toml2json ${pkgs.writeText "want-${v}.toml" (style.mkYaziFlavor style.palettes.enfocado.${v})} | jq -S . >want-${v}.json
+      if ! diff -u want-${v}.json got-${v}.json >&2; then
+        echo "yazi-flavors: enfocado-${v} differs from mkYaziFlavor palettes.${v} (diff above)" >&2; fail=1
+      fi
+    '';
+    ov = withOverride.programs.yazi.flavors;
+  in
+    pkgs.runCommand "yazi-flavors" {nativeBuildInputs = [pkgs.remarshal pkgs.jq pkgs.diffutils];} ''
+      fail=0
+      ${lib.optionalString (!evalOk) ''
+        echo "yazi-flavors: Co's programs.yazi (enable, yy wrapper, zsh integration, theme.flavor) is not the kit's" >&2; fail=1
+      ''}
+      ${lib.concatMapStrings compare ["light" "dark"]}
+      [ "$(toml2json ${ov.enfocado-light}/flavor.toml | jq -r .mgr.cwd.fg)" = "#123456" ] \
+        || { echo "yazi-flavors: flavorOverrides.light not merged into enfocado-light" >&2; fail=1; }
+      [ "$(toml2json ${ov.enfocado-dark}/flavor.toml | jq -r .mgr.cwd.fg)" != "#123456" ] \
+        || { echo "yazi-flavors: flavorOverrides.light leaked into enfocado-dark" >&2; fail=1; }
+      [ "$fail" = 0 ] || exit 1
+      touch $out
+    '';
   # --- end port ---
 }
