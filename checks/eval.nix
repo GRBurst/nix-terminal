@@ -748,4 +748,28 @@ in {
     ("ai-skills-inventory:\n" + lib.concatStringsSep "\n" problems);
 
   # --- end misc --------------------------------------------------------
+
+  # --- sourced --- (group 5, T7.3: `sourced` shell integration)
+
+  # T5.1, P2, R5, S7 proxy. In `sourced` mode (Cₜ) Home Manager writes no
+  # image rc file; the two entry files, the redirected bashrc and
+  # <dotDir>/.zshrc exist. Cₒ (`owned`) keeps its rc files.
+  sourced-no-rc-files = let
+    rc = [".zshrc" ".zshenv" ".zprofile" ".bashrc" ".profile" ".bash_profile" ".bash_logout"];
+    entries = [
+      ".config/terminal-kit/init.zsh"
+      ".config/terminal-kit/init.bash"
+      ".config/terminal-kit/bash/bashrc"
+      ".config/terminal-kit/zsh/.zshrc"
+    ];
+    owned = [".zshenv" ".bashrc" ".profile" ".bash_profile"];
+    present = c: lib.filter (t: lib.elem t (tk.targets c));
+    problems =
+      lib.optional (present Ct rc != []) "Ct writes image rc files: ${toString (present Ct rc)}"
+      ++ lib.optional (present Ct entries != entries) "Ct lacks entry files: ${toString (lib.subtractLists (present Ct entries) entries)}"
+      ++ lib.optional (present Co owned != owned) "Co (owned) lacks rc files: ${toString (lib.subtractLists (present Co owned) owned)}";
+  in
+    mkCheck "sourced-no-rc-files" (problems == []) "sourced-no-rc-files: ${lib.concatStringsSep "; " problems}";
+
+  # --- end sourced ---
 }
