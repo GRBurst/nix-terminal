@@ -163,6 +163,238 @@ in {
         "HIST_VERIFY" # Don't execute immediately upon history expansion.
       ];
 
+      initContent =
+        ''
+          # workaround for rust-analyzer not finding CC in nix shell
+          # export CC="gcc";
+
+          # history prefix search
+          autoload -U history-search-end # have the cursor placed at the end of the line once you have selected your desired command
+          bindkey '^[[A' history-beginning-search-backward
+          bindkey '^[[B' history-beginning-search-forward
+
+          # zsh with pwd in window title
+          function precmd {
+              echo -en "\007" # after every command, set the window to urgent, by ringing the bell
+              term=$(echo $TERM | grep -Eo '^[^-]+')
+              print -Pn "\e]0;$term - zsh %~\a"
+          }
+
+          # current command with args in window title
+          function preexec {
+              term=$(echo $TERM | grep -Eo '^[^-]+')
+              printf "\033]0;%s - %s\a" "$term" "$1"
+          }
+
+          # edit command line in nvim
+          autoload -z edit-command-line
+          zle -N edit-command-line
+          bindkey -M vicmd "^v" edit-command-line
+          bindkey -M viins "^v" edit-command-line
+
+          # map HOME/END in vi mode
+          # https://github.com/jeffreytse/zsh-vi-mode/issues/59#issuecomment-862729015
+          # https://github.com/jeffreytse/zsh-vi-mode/issues/134
+          bindkey -M viins "^[[H" beginning-of-line
+          bindkey -M viins  "^[[F" end-of-line
+          bindkey -M vicmd "^[[H" beginning-of-line
+          bindkey -M vicmd "^[[F" end-of-line
+          bindkey -M visual "^[[H" beginning-of-line
+          bindkey -M visual "^[[F" end-of-line
+
+          # in zshrc: 10ms timeout waiting for keysequences
+          export KEYTIMEOUT=1
+
+          export FZF_DEFAULT_COMMAND='rg --files --hidden --glob "!.git"'
+          export FZF_DEFAULT_OPTS="--extended --multi --ansi" # extended match and multiple selections
+          export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+
+          # colorize manpages
+          export LESS_TERMCAP_mb="$(tput bold; tput setaf 6)";
+          export LESS_TERMCAP_md="$(tput bold; tput setaf 2)";
+          export LESS_TERMCAP_me="$(tput sgr0)";
+          export LESS_TERMCAP_so="$(tput bold; tput setaf 0; tput setab 6)";
+          export LESS_TERMCAP_se="$(tput rmso; tput sgr0)";
+          export LESS_TERMCAP_us="$(tput smul; tput bold; tput setaf 3)";
+          export LESS_TERMCAP_ue="$(tput rmul; tput sgr0)";
+          export LESS_TERMCAP_mr="$(tput rev)";
+          export LESS_TERMCAP_mh="$(tput dim)";
+          export LESS_TERMCAP_ZN="$(tput ssubm)";
+          export LESS_TERMCAP_ZV="$(tput rsubm)";
+          export LESS_TERMCAP_ZO="$(tput ssupm)";
+          export LESS_TERMCAP_ZW="$(tput rsupm)";
+          export GROFF_NO_SGR=1;
+
+          cdg() {
+              # Traverse upwards until you find a .git directory
+              local dir=$(git rev-parse --show-toplevel 2>/dev/null)
+              if [ -n "$dir" ]; then
+                  cd "$dir" || echo "Failed to change directory."
+              else
+                  echo "Not a git repository."
+              fi
+          }
+          cdl() { cd "$1"; ls; }
+
+          # Reverse search links
+          rln() {
+              # $1 file, $2 searchpath
+              searchpath="$2"
+              find -L "${searchpath:-}" -samefile $1
+          }
+
+          p() { cd "~/projects/$(ls -t ~/projects | fzf --query="$(echo $@ | tr ' ' '\ ' )")";}
+          vb() { nvim $(which $1); }
+
+          mmmv() {
+              mmv -n $1 $2 | cut -f4 -d ' ' | xargs mkdir -p
+              mmv "$1/*" "$2/*"
+          }
+
+          # FZF
+          fif() {
+              RG_PREFIX="rg --column --smart-case --no-heading --files-with-matches --hidden"
+              fzf --bind "change:reload:$RG_PREFIX {q} || true" --ansi --disabled --preview 'rg --color=always --smart-case -C 5 {q} {+}' --preview-window wrap $@
+          }
+          fiv() {
+              # RG_PREFIX="rg --column --smart-case --line-number --no-heading"
+              RG_PREFIX="rg --column --smart-case --no-heading --files-with-matches --hidden"
+              file="$(fzf --bind "change:reload:$RG_PREFIX {q} || true" --ansi --disabled --preview 'rg --color=always --smart-case -C 5 {q} {+}' --preview-window wrap $@)"
+              nvim "$file"
+          }
+          fivl() {
+              local query="" file="" output exit_code
+              local RG_PREFIX="rg --column --smart-case --no-heading --files-with-matches --hidden"
+
+              while true; do
+                  output=$(fzf --bind "change:reload:$RG_PREFIX {q} || true" \
+                              --ansi \
+                              --disabled \
+                              --preview 'rg --color=always --smart-case -C 5 {q} {+}' \
+                              --preview-window wrap \
+                              --print-query \
+                              -q "$query")
+                  exit_code=$?
+
+                  query="''${output%%$'\n'*}"
+
+                  if [[ $exit_code -ne 0 ]]; then
+                      break
+                  fi
+
+                  # Escaped here as well
+                  file="''${output#*$'\n'}"
+
+                  if [[ -z "$file" ]]; then
+                      break
+                  fi
+
+                  # Escaped EDITOR fallback
+                  nvim "$file" || break
+              done
+          }
+
+          # Docker
+          dricl() { docker image rm -f $(docker images -q) }
+          drsa() { docker stop $(docker ps -a -q) }
+          drsh() { docker exec -it $1 sh }
+          drbash() { docker exec -it $1 bash }
+          drls() {
+              echo "Containers"
+              docker container ls
+              echo -e "\nVolumes"
+              docker volume ls
+              echo -e "\nNetworks"
+              docker network ls
+              echo -e "\nImages"
+              docker image ls
+          }
+          drclean1() {
+              docker stop $(docker ps -a -f name="$1" -q )
+              docker container rm -f $(docker ps -a -f name="$1" -q )
+              docker network rm $(docker network ls -f name="$1" -q )
+          }
+          drclean1f() {
+              docker stop $(docker ps -a -f name="$1" -q )
+              docker container rm -f $(docker ps -a -f name="$1" -q )
+              docker network rm $(docker network ls -f name="$1" -q )
+              docker image rm -f $(docker images ls -f -q | grep -i "$1" )
+          }
+          drclean1ff() {
+              docker stop $(docker ps -a -f name="$1" -q )
+              docker container rm -f $(docker ps -a -f name="$1" -q )
+              docker network rm $(docker network ls -f name="$1" -q )
+              docker volume rm -f $(docker volume ls -f name="$1" -q )
+          }
+          drclean() {
+              docker stop $(docker ps -a -q )
+              docker container rm -f $(docker ps -a -q )
+              docker network rm $(docker network ls -q )
+          }
+          drcleanf() {
+              docker stop $(docker ps -a -q )
+              docker container rm -f $(docker ps -a -q )
+              docker network rm $(docker network ls -q )
+              docker image rm -f $(docker images -q )
+          }
+          drcleanff() {
+              docker stop $(docker ps -a -q )
+              docker container rm -f $(docker ps -a -q )
+              docker network rm $(docker network ls -q )
+              docker image rm -f $(docker images -q )
+              docker volume rm -f $(docker volume ls -q )
+          }
+          drclean?() {
+              local numContainer="$(docker container ls -q | wc -l)"
+              local numVolumes="$(docker volume ls -q | wc -l)"
+              local numNetworks="$(docker network ls -q | wc -l)"
+              if [[ "$numContainer" -eq 0 && "$numVolumes" -eq 0 && "$numNetworks" -eq 3 ]]; then
+                  echo "Docker clean"
+              else
+                  echo "Docker unclean"
+              fi
+          }
+
+          sshkeygen() {
+              ssh-keygen -t ed25519 -C "$(whoami)@$(hostname)->$1 on $(date -I)" -f "$HOME/.ssh/$(hostname)->$1"
+          }
+          sshkeygen_legacy() {
+              ssh-keygen -t rsa -b 4096 -C "$(whoami)@$(hostname)->$1 on $(date -I)" -f "$HOME/.ssh/$(hostname)->$1_legacy"
+          }
+
+          tmpremount() {
+              sudo mount -o remount,size="$1",noatime /tmp
+          }
+
+          nixos-details() {
+              printf '- System: '
+              nixos-version
+              printf '- Nix version: '
+              nix-env --version
+              printf '- Nixpkgs version: '
+              nix-instantiate --eval '<nixpkgs>' -A lib.nixpkgsVersion
+              printf '- Sandboxing enabled: '
+              grep build-use-sandbox /etc/nix/nix.conf | sed s/.*=//
+          }
+
+          search_replace() {
+              ag "$1" -l0 | xargs -0 sed -i "s/$1/$2/g"
+          }
+          search_replace_all() {
+              ag -a --hidden "$1" -l0 | xargs -0 sed -i "s/$1/$2/g"
+          }
+
+          # wrap the ollama command, if the parameter is pull with no other parameters pull all models
+          function ollama_update() {
+              echo "pulling all models..."
+              ollama list | awk '$1 !~ /^registry.local/ {print $1}' | while read -r model; do
+                echo "Pulling $model"
+                ollama pull "$model"
+              done
+          }
+        ''
+        + lib.optionalString (cfg.zsh.extraInit != "") ("\n" + cfg.zsh.extraInit);
+
       # zsh-system-clipboard talks to the X11/Wayland clipboard: only with
       # clipboard = "system" (R15).
       plugins =

@@ -291,6 +291,35 @@ in {
   zsh-hooks = let
     lib = pkgs.lib;
     z = c: c.programs.zsh;
+    # T4.6b: initContent. A sample of A.1's public functions and settings;
+    # HISTFILE is set once (Home Manager's history.path line, not a
+    # second literal); κ.zsh.extraInit comes after the kit's content.
+    probeInit = "tk_probe_init() { :; }";
+    withInit =
+      (tk.mkHome [
+        {
+          home = {
+            username = "tester";
+            homeDirectory = "/home/tester";
+            stateVersion = "26.05";
+          };
+          programs.terminalKit = {
+            enable = true;
+            zsh.extraInit = probeInit;
+          };
+        }
+      ]).config;
+    lastPublic = "function ollama_update() {";
+    initLines = c: map lib.trim (lib.splitString "\n" (z c).initContent);
+    initSample = ["function precmd {" "export KEYTIMEOUT=1" "cdg() {" "fif() {" "drclean?() {" "search_replace() {" lastPublic];
+    initMissing = c: lib.filter (l: !(lib.elem l (initLines c))) initSample;
+    histfile = c: lib.filter (lib.hasPrefix "HISTFILE=") (initLines c);
+    indexOf = l: c: lib.lists.findFirstIndex (x: x == l) null (initLines c);
+    initAfter = let
+      i = indexOf probeInit withInit;
+      j = indexOf lastPublic withInit;
+    in
+      i != null && j != null && i > j;
     sample = ["rm" "ls" "cdp" "t" "nd" "ssh" "rcp" "v" "g" "dr" "drps" "has_dns" "won" "serve" "nload"];
     missing = c: lib.filter (a: !((z c).shellAliases ? ${a})) sample;
     plugins = c: map (p: p.name) (z c).plugins;
@@ -305,7 +334,10 @@ in {
       ++ lib.optional ((z Co).dotDir != "${Co.xdg.configHome}/zsh") "Co dotDir = ${toString (z Co).dotDir}"
       ++ lib.optional (!(lib.elem "zsh-system-clipboard" (plugins Co))) "Co (system clipboard) lacks zsh-system-clipboard"
       ++ lib.optional (lib.elem "zsh-system-clipboard" (plugins Ct)) "Ct (osc52) loads zsh-system-clipboard"
-      ++ lib.optional (!(lib.all (p: lib.elem p (plugins Ct)) ["zsh-print-alias" "mill-zsh-completions"])) "Ct lacks a public plugin";
+      ++ lib.optional (!(lib.all (p: lib.elem p (plugins Ct)) ["zsh-print-alias" "mill-zsh-completions"])) "Ct lacks a public plugin"
+      ++ lib.optional (initMissing Co != []) "Co initContent lacks: ${lib.concatStringsSep " | " (initMissing Co)}"
+      ++ lib.optional (lib.length (histfile Co) != 1) "Co HISTFILE lines: ${builtins.toJSON (histfile Co)}"
+      ++ lib.optional (!initAfter) "κ.zsh.extraInit is not after the kit's initContent";
   in
     mkCheck "zsh-hooks" (problems == []) "zsh-hooks: ${lib.concatStringsSep "; " problems}";
   # --- end port ---
