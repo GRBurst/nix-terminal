@@ -217,5 +217,52 @@ in {
       ++ lib.optional (signOff nameOnly != null) "name-only format.signOff set";
   in
     mkCheck "git-identity" (problems == []) "git-identity: ${lib.concatStringsSep "; " problems}";
+
+  # T4.4b, R16 `par`. `clus` clones from κ.git.githubUser's fork: present
+  # in Cₒ (githubUser = "tester", body otherwise the original's), absent
+  # in Cₜ (githubUser = null).
+  git-clus = let
+    lib = pkgs.lib;
+    want = "!f() { IN=(\${1//// }); git clone git@github.com:tester/\${IN[1]} && cd \${IN[1]} && git remote add upstream git@github.com:$1 && git remote -v ; }; f";
+    got = c: c.programs.git.settings.alias.clus or null;
+  in
+    mkCheck "git-clus" (got Co == want && got Ct == null)
+    "git-clus: Co clus = ${builtins.toJSON (got Co)} (want ${builtins.toJSON want}); Ct clus = ${builtins.toJSON (got Ct)} (want null)";
+
+  # T4.4b, P18 for git. κ.git.extraAliases merge into the aliases,
+  # κ.git.includes reach programs.git.includes, and κ.git.tigExtraConfig
+  # is appended to the kit's tig/config (Cₒ, without it, gets the file
+  # unchanged).
+  git-hooks = let
+    lib = pkgs.lib;
+    tigExtra = "bind generic Z !true\n";
+    include = {
+      condition = "gitdir:~/work/";
+      path = "~/work/.gitconfig";
+    };
+    hooked =
+      (tk.mkHome [
+        {
+          home = {
+            username = "tester";
+            homeDirectory = "/home/tester";
+            stateVersion = "26.05";
+          };
+          programs.terminalKit = {
+            enable = true;
+            git.includes = [include];
+            git.tigExtraConfig = tigExtra;
+          };
+        }
+      ]).config;
+    base = builtins.readFile "${self}/modules/terminal-kit/git/tig/config";
+    tig = c: c.xdg.configFile."tig/config".text;
+    problems =
+      lib.optional ((Co.programs.git.settings.alias.tk-probe or null) != "status") "Co alias tk-probe missing"
+      ++ lib.optional (!(lib.any (i: i.condition == include.condition && i.path == include.path) hooked.programs.git.includes)) "includes not passed to programs.git.includes"
+      ++ lib.optional (tig Co != base) "Co tig/config is not the kit's file"
+      ++ lib.optional (tig hooked != base + tigExtra) "tigExtraConfig not appended to tig/config";
+  in
+    mkCheck "git-hooks" (problems == []) "git-hooks: ${lib.concatStringsSep "; " problems}";
   # --- end port ---
 }

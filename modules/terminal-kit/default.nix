@@ -135,6 +135,11 @@ in {
         default = [];
         description = "Passed to programs.git.includes.";
       };
+      tigExtraConfig = mkOption {
+        type = types.lines;
+        default = "";
+        description = "Appended to the kit's tig/config.";
+      };
     };
 
     nvf = {
