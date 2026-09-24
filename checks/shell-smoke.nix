@@ -26,7 +26,7 @@
   snippet = sh: ''if [ -r "$HOME/${entryDir}/init.${sh}" ]; then . "$HOME/${entryDir}/init.${sh}"; fi'';
 in
   pkgs.runCommand "sourced-shell-smoke" {
-    nativeBuildInputs = [pkgs.zsh pkgs.bashInteractive pkgs.coreutils pkgs.gnugrep];
+    nativeBuildInputs = [pkgs.zsh pkgs.bashInteractive pkgs.coreutils pkgs.gnugrep pkgs.gawk];
   } ''
     set -euo pipefail
     if [ "$NIX_BUILD_TOP" != /build ]; then
@@ -77,6 +77,35 @@ in
     [ "$histfile" = ${lib.escapeShellArg CtS.programs.zsh.history.path} ] || fail "history: HISTFILE = $histfile"
     case $histfile in "$HOME"/*) ;; *) fail "history: $histfile is not under $HOME" ;; esac
     [ -d "$(dirname "$histfile")" ] || fail "history: $(dirname "$histfile") does not exist"
+
+    # case nested (S6, P12, P13), zsh and bash: a child interactive shell
+    # started from a parent one repeats no PATH entry more often than the
+    # parent has it, and writes nothing to stderr. The loaded guard is not
+    # exported, so the child runs its rc files again (`rerun`: a kit alias
+    # in zsh, a Home Manager bash shopt in bash; neither is inherited).
+    for sh in zsh bash; do
+      case $sh in
+        zsh) rerun='alias g' ;;
+        bash) rerun='shopt -q globstar' ;;
+      esac
+      if $sh -ic 'env' 2>/dev/null | grep -q '^__tk_'; then fail "nested $sh: a loaded guard is exported"; fi
+      parent=$($sh -ic 'printf %s "$PATH"' 2>/dev/null)
+      $sh -ic "$sh -i -c '$rerun >/dev/null || printf NOT-RERUN; printf %s \"\$PATH\"' >$TMPDIR/child 2>$TMPDIR/childerr" 2>/dev/null
+      if grep -q NOT-RERUN "$TMPDIR/child"; then fail "nested $sh: the child did not run the entry file ($rerun)"; fi
+      # Without a controlling terminal, `bash -i` itself (also with
+      # --norc) prints its two job-control lines; they are not the kit's.
+      grep -v -e '^bash: cannot set terminal process group (' -e '^bash: no job control in this shell$' \
+        "$TMPDIR/childerr" >"$TMPDIR/childerr.kit" || true
+      if [ -s "$TMPDIR/childerr.kit" ]; then
+        echo "nested $sh: child stderr:" >&2; cat -v "$TMPDIR/childerr.kit" >&2; exit 1
+      fi
+      tr : '\n' <"$TMPDIR/child" | sort | uniq -c >"$TMPDIR/cc"
+      printf %s "$parent" | tr : '\n' | sort | uniq -c >"$TMPDIR/pc"
+      while read -r n e; do
+        p=$(awk -v e="$e" '$2 == e { print $1 }' "$TMPDIR/pc")
+        [ "$n" -le "''${p:-0}" ] || fail "nested $sh: PATH entry $e appears $n times in the child, ''${p:-0} in the parent"
+      done <"$TMPDIR/cc"
+    done
 
     touch $out
   ''
