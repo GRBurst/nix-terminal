@@ -63,6 +63,35 @@
     vim.fn.writefile({ vim.json.encode(r) }, out)
     vim.cmd('qa!')
   '';
+
+  # S28: `yy` then `p` on a line `abc`, three rounds, each timed on its
+  # own (start-up excluded). Writes the observations as JSON to $TK_OUT.
+  pasteDriver = pkgs.writeText "clipboard-osc52-paste.lua" ''
+    local r = { rounds = {} }
+    -- osc52.paste announces its wait with nvim_echo(…, history = false),
+    -- which never reaches :messages; record it at the call instead.
+    r.waiting = false
+    local echo = vim.api.nvim_echo
+    vim.api.nvim_echo = function(chunks, ...)
+      for _, c in ipairs(chunks) do
+        if tostring(c[1]):find("Waiting for OSC 52", 1, true) then r.waiting = true end
+      end
+      return echo(chunks, ...)
+    end
+    r.provider = vim.fn['provider#clipboard#Executable']()
+    for _ = 1, 3 do
+      vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'abc' })
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      local t0 = vim.uv.hrtime()
+      vim.cmd('normal! yy')
+      vim.cmd('normal! p')
+      local ms = (vim.uv.hrtime() - t0) / 1e6
+      table.insert(r.rounds, { ms = ms, lines = vim.api.nvim_buf_get_lines(0, 0, -1, false) })
+    end
+    r.errmsg = vim.v.errmsg
+    vim.fn.writefile({ vim.json.encode(r) }, os.getenv('TK_OUT'))
+    vim.cmd('qa!')
+  '';
 in {
   # S19/S20 proxy, R8, Snippet 8 (+ `reply-first`):
   #   fallback     no state, no reply           → light, enfocado
@@ -116,6 +145,39 @@ in {
     }
 
     [ "$fail" -eq 0 ] || exit 1
+    touch $out
+  '';
+
+  # S28: in Ct (`clipboard = "osc52"`) a paste after a yank is local and
+  # fast: the provider is the kit's, every round pastes `abc` below `abc`,
+  # the fastest of three `yy`+`p` rounds takes < 100 ms (the minimum, so a
+  # load spike in the build does not flake it), and Neovim never waits for
+  # an OSC 52 reply.
+  clipboard-osc52-paste = pkgs.runCommand "clipboard-osc52-paste" {nativeBuildInputs = [pkgs.jq pkgs.coreutils];} ''
+    ${prelude}
+    fresh paste
+    rc=0
+    TK_OUT=$dir/result.json timeout 120 ${nvim} --headless \
+      -c "lua vim.schedule(function() dofile('${pasteDriver}') end)" \
+      </dev/null >"$dir/stdout" 2>"$dir/stderr" || rc=$?
+    r=$dir/result.json
+    if [ "$rc" -ne 0 ] || [ ! -s "$r" ]; then
+      echo "clipboard-osc52-paste: nvim exit $rc, stderr: $(cat "$dir/stderr")" >&2
+      exit 1
+    fi
+    times=$(jq -c '[.rounds[].ms]' "$r")
+    jq -e '.provider == "terminal-kit-osc52"' "$r" >/dev/null \
+      || bad clipboard-osc52-paste "provider $(jq -c .provider "$r"), want terminal-kit-osc52"
+    jq -e '.rounds | length == 3 and all(.lines == ["abc", "abc"])' "$r" >/dev/null \
+      || bad clipboard-osc52-paste "buffer after yy+p: $(jq -c '[.rounds[].lines]' "$r"), want [\"abc\",\"abc\"] each round"
+    jq -e '[.rounds[].ms] | min < 100' "$r" >/dev/null \
+      || bad clipboard-osc52-paste "fastest yy+p round >= 100 ms; rounds (ms): $times"
+    jq -e '.waiting | not' "$r" >/dev/null \
+      || bad clipboard-osc52-paste "'Waiting for OSC 52 response' was shown"
+    jq -e '.errmsg == ""' "$r" >/dev/null \
+      || bad clipboard-osc52-paste "v:errmsg = $(jq -c .errmsg "$r")"
+    [ "$fail" -eq 0 ] || exit 1
+    echo "clipboard-osc52-paste: rounds (ms): $times"
     touch $out
   '';
 
