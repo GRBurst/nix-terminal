@@ -5,6 +5,28 @@
   tk,
 }: let
   inherit (tk) mkCheck ownedHome templateHome Co Ct;
+
+  # --- misc (T6.2, T8.1): fixture -------------------------------------
+  # A minimal configuration with the `file` mode source and agent skills
+  # left at their default (off). Local on purpose: the nvf branch adds its own `Cf` to lib.nix;
+  # the two are deduplicated after the merge.
+  fileHomeMisc = tk.mkHome [
+    {
+      home = {
+        username = "tester";
+        homeDirectory = "/home/tester";
+        stateVersion = "26.05";
+      };
+      programs.terminalKit = {
+        enable = true;
+        theme.modeSource = "file";
+      };
+    }
+  ];
+  CfMisc = fileHomeMisc.config;
+  hasPackage = c: name: lib.any (p: lib.getName p == name) c.home.packages;
+  inherit (pkgs) lib;
+  # --- end misc fixture ------------------------------------------------
 in {
   # R2, D11, D12, P15: the kit reads neither `osConfig` nor any Stylix
   # option, so it evaluates the same standalone and inside NixOS.
@@ -44,4 +66,17 @@ in {
       && !(templateHome.options ? stylix)
     )
     "configs-evaluate: a Stylix option is declared in a test configuration";
+
+  # --- misc (T6.2, T8.1) ---------------------------------------------
+
+  # R9: the mode override command exists only with the `terminal` mode
+  # source; with `file`, darkman and my-style-switch own the state file.
+  mode-command-installed =
+    mkCheck "mode-command-installed"
+    (hasPackage Ct "nix-terminal-mode"
+      && hasPackage Co "nix-terminal-mode"
+      && !(hasPackage CfMisc "nix-terminal-mode"))
+    "mode-command-installed: nix-terminal-mode must be in Ct and Co (terminal) and absent from CfMisc (file); got Ct=${lib.boolToString (hasPackage Ct "nix-terminal-mode")} Co=${lib.boolToString (hasPackage Co "nix-terminal-mode")} CfMisc=${lib.boolToString (hasPackage CfMisc "nix-terminal-mode")}";
+
+  # --- end misc --------------------------------------------------------
 }
