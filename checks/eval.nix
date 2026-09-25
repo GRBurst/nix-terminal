@@ -434,7 +434,7 @@ in {
   # scan (splitString, hasInfix), no regex.
   zsh-tty-guard = let
     lib = pkgs.lib;
-    patterns = ["echo -ne '\\e[" "echo -ne \"\\e[" "printf '\\e[" "(tput " "\\007" "\\e]0;" "\\033]0;"];
+    patterns = ["echo -ne '\\e[" "echo -ne \"\\e[" "printf '\\e[" "(tput " "/bin/tput " "\\007" "\\e]0;" "\\033]0;"];
     isOutput = t: lib.any (p: lib.hasInfix p t) patterns;
     isIf = t: lib.hasPrefix "if " t && lib.hasSuffix "then" t;
     step = s: line: let
@@ -905,5 +905,45 @@ in {
       [ "$fail" = 0 ] || exit 1
       touch $out
     '';
+
+  # T5.7, R5. The kit's zsh start-up runs no external command the kit does
+  # not install: every `tput` in Co's and Ct's initContent is ncurses' by
+  # store path, and so is precmd's `grep` (it runs before every prompt,
+  # the first included). A command word is bare when it starts the text or
+  # follows one of `( ;|&` or whitespace or a backquote; `output ` is not
+  # `tput `.
+  zsh-tput-pinned = let
+    seps = ["(" " " ";" "|" "&" "\t" "\n" "`"];
+    # occurrences of the command word `cmd` in `text`: {bare, pinned}
+    uses = cmd: dir: text: let
+      chunks = lib.splitString "${cmd} " text;
+      befores = lib.take (lib.length chunks - 1) chunks;
+      isBare = b: b == "" || lib.any (s: lib.hasSuffix s b) seps;
+      isPinned = b: lib.hasSuffix "${dir}/bin/" b;
+    in {
+      bare = lib.length (lib.filter isBare befores);
+      pinned = lib.length (lib.filter isPinned befores);
+    };
+    tputDir = lib.getBin pkgs.ncurses;
+    grepDir = lib.getBin pkgs.gnugrep;
+    init = c: c.programs.zsh.initContent;
+    # the body of `function precmd {` up to its closing `}` line
+    precmd = c: let
+      ls = lib.splitString "\n" (init c);
+      start = lib.lists.findFirstIndex (l: lib.trim l == "function precmd {") (lib.length ls) ls;
+      from = lib.drop (start + 1) ls;
+      end = lib.lists.findFirstIndex (l: lib.trim l == "}") (lib.length from) from;
+    in
+      lib.concatStringsSep "\n" (lib.take end from);
+    problems = l: c: let
+      t = uses "tput" "${tputDir}" (init c);
+      g = uses "grep" "${grepDir}" (precmd c);
+    in
+      lib.optional (t.bare != 0) "${l}: ${toString t.bare} bare tput in initContent"
+      ++ lib.optional (t.pinned < 13) "${l}: ${toString t.pinned} tput by ${tputDir}/bin/, want at least 13 (LESS_TERMCAP)"
+      ++ lib.optional (g.bare != 0 || g.pinned != 1) "${l}: precmd has ${toString g.bare} bare grep and ${toString g.pinned} by ${grepDir}/bin/, want 0 and 1";
+    all = problems "Co" Co ++ problems "Ct" Ct;
+  in
+    mkCheck "zsh-tput-pinned" (all == []) "zsh-tput-pinned: ${lib.concatStringsSep "; " all}";
   # --- end final ---
 }

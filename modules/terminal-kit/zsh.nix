@@ -6,6 +6,10 @@
   ...
 }: let
   cfg = config.programs.terminalKit;
+  # External commands the start-up runs, by store path: the image may lack
+  # them (ncurses is not in the kit's profile).
+  tput = lib.getExe' pkgs.ncurses "tput";
+  grep = lib.getExe' pkgs.gnugrep "grep";
   # clipboard = "osc52" (R15, Snippet 10): the vi yank widgets also send
   # the cut buffer to the terminal clipboard. The target is overridable
   # for tests (PD8).
@@ -187,7 +191,7 @@ in {
           function precmd {
               [[ -t 1 ]] || return
               echo -en "\007" # after every command, set the window to urgent, by ringing the bell
-              term=$(echo $TERM | grep -Eo '^[^-]+')
+              term=$(echo $TERM | ${grep} -Eo '^[^-]+')
               print -Pn "\e]0;$term - zsh %~\a"
           }
 
@@ -244,19 +248,19 @@ in {
 
           # colorize manpages
           if [[ -t 1 ]]; then
-            export LESS_TERMCAP_mb="$(tput bold; tput setaf 6)";
-            export LESS_TERMCAP_md="$(tput bold; tput setaf 2)";
-            export LESS_TERMCAP_me="$(tput sgr0)";
-            export LESS_TERMCAP_so="$(tput bold; tput setaf 0; tput setab 6)";
-            export LESS_TERMCAP_se="$(tput rmso; tput sgr0)";
-            export LESS_TERMCAP_us="$(tput smul; tput bold; tput setaf 3)";
-            export LESS_TERMCAP_ue="$(tput rmul; tput sgr0)";
-            export LESS_TERMCAP_mr="$(tput rev)";
-            export LESS_TERMCAP_mh="$(tput dim)";
-            export LESS_TERMCAP_ZN="$(tput ssubm)";
-            export LESS_TERMCAP_ZV="$(tput rsubm)";
-            export LESS_TERMCAP_ZO="$(tput ssupm)";
-            export LESS_TERMCAP_ZW="$(tput rsupm)";
+            export LESS_TERMCAP_mb="$(${tput} bold; ${tput} setaf 6)";
+            export LESS_TERMCAP_md="$(${tput} bold; ${tput} setaf 2)";
+            export LESS_TERMCAP_me="$(${tput} sgr0)";
+            export LESS_TERMCAP_so="$(${tput} bold; ${tput} setaf 0; ${tput} setab 6)";
+            export LESS_TERMCAP_se="$(${tput} rmso; ${tput} sgr0)";
+            export LESS_TERMCAP_us="$(${tput} smul; ${tput} bold; ${tput} setaf 3)";
+            export LESS_TERMCAP_ue="$(${tput} rmul; ${tput} sgr0)";
+            export LESS_TERMCAP_mr="$(${tput} rev)";
+            export LESS_TERMCAP_mh="$(${tput} dim)";
+            export LESS_TERMCAP_ZN="$(${tput} ssubm)";
+            export LESS_TERMCAP_ZV="$(${tput} rsubm)";
+            export LESS_TERMCAP_ZO="$(${tput} ssupm)";
+            export LESS_TERMCAP_ZW="$(${tput} rsupm)";
           fi
           export GROFF_NO_SGR=1;
 

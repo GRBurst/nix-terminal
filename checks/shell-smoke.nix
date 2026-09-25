@@ -28,7 +28,7 @@
   # reduced to the one-time snippets.
   inFakeHome = name: body:
     pkgs.runCommand name {
-      nativeBuildInputs = [pkgs.zsh pkgs.bashInteractive pkgs.coreutils pkgs.gnugrep pkgs.gawk];
+      nativeBuildInputs = [pkgs.zsh pkgs.bashInteractive pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.util-linux];
     } ''
       set -euo pipefail
       if [ "$NIX_BUILD_TOP" != /build ]; then
@@ -65,6 +65,16 @@ in {
       echo "silent: zsh -ilc true: exit $rc; stdout, stderr:" >&2
       cat -v "$TMPDIR/out" "$TMPDIR/err" >&2
       exit 1
+    fi
+
+    # case tty (T5.7, R5): with a terminal on stdout (a pty from
+    # `script`) and no tput on PATH, the terminal-only start-up output
+    # runs without an error, and LESS_TERMCAP_* are set by the kit's tput.
+    if command -v tput >/dev/null; then fail "tty: tput is on the builder's PATH"; fi
+    rc=0; TERM=xterm-256color script -qec 'zsh -ic "print -r -- LEN=\''${#LESS_TERMCAP_md}"' "$TMPDIR/tty.log" \
+      </dev/null >/dev/null 2>&1 || rc=$?
+    if [ "$rc" -ne 0 ] || grep -qa -e 'not found' -e 'tput' "$TMPDIR/tty.log" || ! grep -qa 'LEN=[1-9]' "$TMPDIR/tty.log"; then
+      echo "tty: exit $rc; the terminal's output:" >&2; cat -v "$TMPDIR/tty.log" >&2; exit 1
     fi
 
     # case resolve (S3, P17)
