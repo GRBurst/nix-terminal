@@ -47,7 +47,7 @@
     ${guard}=1
     case ":$PATH:" in
       *":$HOME/.nix-profile/bin:"*) ;;
-      *) if [[ -r $HOME/.nix-profile/etc/profile.d/nix.sh ]]; then . $HOME/.nix-profile/etc/profile.d/nix.sh; fi ;;
+      *) if [[ -r "$HOME/.nix-profile/etc/profile.d/nix.sh" ]]; then . "$HOME/.nix-profile/etc/profile.d/nix.sh"; fi ;;
     esac
     # The Home Manager profile's bin, when no nix.sh put it on PATH.
     case ":$PATH:" in

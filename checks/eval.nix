@@ -794,6 +794,29 @@ in {
   in
     mkCheck "zsh-osc52-plugins" (problems == []) "zsh-osc52-plugins: ${lib.concatStringsSep "; " problems}";
 
+  # Review follow-up (bdocs #5): an entry file sources nix.sh through an
+  # unquoted `$HOME`, so bash splits a home directory containing spaces.
+  # Every `. ` (source) statement in both entry files quotes its argument.
+  entry-files-quoted = let
+    entryTexts = map (t: {
+      inherit t;
+      text = (lib.findFirst (f: f.enable && f.target == t) null (lib.attrValues Ct.home.file)).text or "";
+    }) [".config/terminal-kit/init.zsh" ".config/terminal-kit/init.bash"];
+    # a source statement: `. <arg>` at line start or after `then`/`;`
+    unquoted = e:
+      lib.filter (l: let
+        parts = lib.splitString ". " l;
+      in
+        lib.any (p: lib.hasPrefix "$" p || lib.hasPrefix "/" p) (lib.drop 1 parts)
+        && (lib.hasInfix "then . " l || lib.hasPrefix ". " (lib.trim l)))
+      (lib.splitString "\n" e.text);
+    problems = lib.concatMap (e:
+      lib.optional (e.text == "") "${e.t}: no text"
+      ++ map (l: "${e.t}: unquoted source argument: ${lib.trim l}") (unquoted e))
+    entryTexts;
+  in
+    mkCheck "entry-files-quoted" (problems == []) ("entry-files-quoted:\n" + lib.concatStringsSep "\n" problems);
+
   # --- end sourced ---
 
   # --- nvim2 (T7.1) ----------------------------------------------------
