@@ -366,9 +366,37 @@ in {
       lib.optional ((Co.programs.git.settings.alias.tk-probe or null) != "status") "Co alias tk-probe missing"
       ++ lib.optional (!(lib.any (i: i.condition == include.condition && i.path == include.path) hooked.programs.git.includes)) "includes not passed to programs.git.includes"
       ++ lib.optional (tig Co != base) "Co tig/config is not the kit's file"
-      ++ lib.optional (tig hooked != base + tigExtra) "tigExtraConfig not appended to tig/config";
+      ++ lib.optional (tig hooked != tig Ct + tigExtra) "tigExtraConfig not appended to tig/config";
   in
     mkCheck "git-hooks" (problems == []) "git-hooks: ${lib.concatStringsSep "; " problems}";
+
+  # tig signing binds follow git.signingKey (user report: `C` in tig failed
+  # on the workspace with "gpg failed to sign"). With a key (Cₒ) the kit's
+  # tig/config is byte-identical to the file, so a keyed host keeps its
+  # bindings; without one (Cₜ) exactly the signing binds differ: commits
+  # keep the sign-off (`-s`) without `-S`, and `tag -s` becomes `tag -a`.
+  # `stash push -S` is `--staged`, not signing, and stays.
+  git-tig-signing = let
+    lib = pkgs.lib;
+    base = builtins.readFile "${self}/modules/terminal-kit/git/tig/config";
+    tigLines = c: lib.splitString "\n" c.xdg.configFile."tig/config".text;
+    baseLines = lib.splitString "\n" base;
+    changed = c: lib.filter (l: !(lib.elem l baseLines)) (tigLines c);
+    wantChanged = [
+      "bind main    T !git tag -a"
+      "bind status  C !git commit -s"
+      "bind status  A !git commit -s --amend"
+      "bind stage   A !git commit -s --amend"
+      "bind stage   C !git commit -s"
+    ];
+    signingBinds = c: lib.filter (l: lib.hasPrefix "bind " l && (lib.hasInfix "git commit -S" l || lib.hasInfix "git tag -s" l)) (tigLines c);
+    problems =
+      lib.optional (Co.xdg.configFile."tig/config".text != base) "Co (signingKey set): tig/config differs from the kit's file"
+      ++ lib.optional (signingBinds Ct != []) "Ct (no signingKey): signing binds remain: ${builtins.toJSON (signingBinds Ct)}"
+      ++ lib.optional (changed Ct != wantChanged) "Ct: changed lines ${builtins.toJSON (changed Ct)}, want ${builtins.toJSON wantChanged}"
+      ++ lib.optional (!(lib.elem "bind stage   P !git stash push -S" (tigLines Ct))) "Ct: stash push -S (staged) was changed";
+  in
+    mkCheck "git-tig-signing" (problems == []) ("git-tig-signing:\n" + lib.concatStringsSep "\n" problems);
 
   # T4.5. The public session variables of A.2 are set (with their values)
   # in Cₒ and Cₜ; none of the desktop ones is.

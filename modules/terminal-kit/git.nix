@@ -23,7 +23,18 @@ in {
       # Only tig itself is installed here.
       home.packages = [pkgs.tig];
 
-      xdg.configFile."tig/config".text = builtins.readFile ./git/tig/config + cfg.tigExtraConfig;
+      # tig's signing binds need a key; without one they would fail with
+      # "gpg failed to sign". With a key the file is used unchanged.
+      xdg.configFile."tig/config".text = let
+        tigBase = builtins.readFile ./git/tig/config;
+        tigUnsigned = builtins.replaceStrings ["!git commit -S -s" "!git tag -s"] ["!git commit -s" "!git tag -a"] tigBase;
+      in
+        (
+          if signing
+          then tigBase
+          else tigUnsigned
+        )
+        + cfg.tigExtraConfig;
 
       programs.git = {
         enable = true;
