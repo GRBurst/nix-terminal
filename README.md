@@ -17,6 +17,32 @@ module.
 | `checks.x86_64-linux.*` | the checks behind `nix flake check` |
 | `formatter.x86_64-linux` | Alejandra |
 
+## Checking a workspace before setup
+
+`scripts/workspace-probe.sh` is a self-contained bash script that measures
+what the kit assumes about a workspace: that Nix substitutes from
+cache.nixos.org, that interactive shells reach the end of `~/.zshrc` and
+`~/.bashrc`, the shell start time, whether the terminal answers OSC 11 and
+DA1 and passes OSC 52 to the Windows clipboard, and how `pgrep` sees Neovim.
+It needs only bash 4 and the usual coreutils, procps and util-linux.
+
+```sh
+curl -fsSLo ~/workspace-probe.sh https://raw.githubusercontent.com/GRBurst/nix-terminal/main/scripts/workspace-probe.sh
+bash ~/workspace-probe.sh baseline [private-repo-url]
+bash ~/workspace-probe.sh terminal --label vscode   # once per terminal: vscode, alacritty-ssh, cmd
+# after the setup:
+bash ~/workspace-probe.sh compare ~/.cache/terminal-kit-probe/baseline-nolabel-<timestamp>.txt [private-repo-url]
+```
+
+`baseline` appends one line to `~/.zshrc` and `~/.bashrc` while it starts
+the shells, and restores both from a backup (it checks the sha256
+afterwards). It changes nothing else. `terminal` asks you to paste into
+Notepad and answer y or n. `compare` hashes the files again and exits 1 if
+anything differs. After the setup, only the two rc files should differ,
+by the snippet you appended. Every report is printed and also saved under
+`~/.cache/terminal-kit-probe/`. Reports contain no environment values,
+URLs, host names or home paths: the repository URL shows up only as a hash.
+
 ## Quick start: Coder workspace
 
 On the workspace you need a single-user Nix install and
@@ -251,7 +277,8 @@ nix flake check --keep-going
 The checks evaluate two configurations with the real Home Manager: the
 template, unedited, and an `owned` configuration with every option on. They
 run the sourced shells in a scratch `$HOME` (silent start, nested shells,
-missing entry file, the snippet check), headless Neovim (theme, mode
+missing entry file, the snippet check), the workspace probe (shellcheck and
+a run of `baseline` in a scratch `$HOME`), headless Neovim (theme, mode
 signal, OSC 52 clipboard) and `nix-terminal-mode`; they check the template's
 closure for GUI toolkits and clipboard tools, the Claude Code guarantees
 above, the palettes and theme packages, the template flake, the output

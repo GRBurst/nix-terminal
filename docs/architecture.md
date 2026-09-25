@@ -174,7 +174,7 @@ is the template, unedited (`sourced`, `osc52`); `Co` has every option on
 | Agent skills and Claude Code | `ai-skills-links`, `ai-skills-inventory`, `claude-noninterference` |
 | The template flake, evaluated offline with this flake as `nix-terminal` | `template-evaluates`, `template-exposes-hm-cli` |
 | Pure library and build output | `style-palette`, `style-templates`, `style-base16`, `alacritty-theme` (TOML round trip, no store path) |
-| Repository and publication | `leaks`, `no-os-config`, `formatting` (Alejandra), `ci-workflow-lint` (actionlint), `outputs-shape` (exactly the documented output groups, MIT metadata, LICENSE), `readme-options` |
+| Repository and publication | `leaks`, `no-os-config`, `formatting` (Alejandra), `ci-workflow-lint` (actionlint), `outputs-shape` (exactly the documented output groups, MIT metadata, LICENSE), `readme-options`, `workspace-probe` (the phase-0 probe script: shellcheck, a scratch-`$HOME` run of `baseline` and `compare`) |
 
 Runtime checks run shells and headless Neovim in a scratch `$HOME` inside
 the build sandbox. Generated text is matched with `lib.hasInfix` or line

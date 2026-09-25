@@ -61,6 +61,8 @@ in
     };
     # --- end final ---
 
+    workspace-probe = import ./workspace-probe.nix {inherit pkgs;};
+
     readme-options = import ./readme-options.nix {
       inherit pkgs lib self;
       inherit (tk.ownedHome) options;
