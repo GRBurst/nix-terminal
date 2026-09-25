@@ -819,4 +819,91 @@ in {
     ("clipboard-osc52-eval:\n" + lib.concatStringsSep "\n" problems);
 
   # --- end nvim2 -------------------------------------------------------
+
+  # --- final --- (T9.2, T9.3, T5.7)
+
+  # R6, P3–P5, S8 proxy. The template configuration leaves Claude Code
+  # alone: no session variable ANTHROPIC_*/CLAUDE_*/AWS_* (P4), no package,
+  # binary, alias or shell function named claude (P5), nothing under
+  # ~/.claude but ~/.claude/skills/<name> (P3), and the dev set off. The
+  # generated shell texts (every file under ~/.config/terminal-kit/, and
+  # hm-session-vars.sh) are scanned line by line at build time, so an
+  # `alias claude=`, a `claude()` function or an `export CLAUDE_…` in
+  # initContent is caught too.
+  claude-noninterference = let
+    claudeNames = ["claude" "claude-code"];
+    forbiddenVar = n: lib.any (p: lib.hasPrefix p n) ["ANTHROPIC_" "CLAUDE_" "AWS_"];
+    varSets = {
+      "home.sessionVariables" = Ct.home.sessionVariables;
+      "programs.zsh.sessionVariables" = Ct.programs.zsh.sessionVariables;
+      "programs.bash.sessionVariables" = Ct.programs.bash.sessionVariables;
+      "systemd.user.sessionVariables" = Ct.systemd.user.sessionVariables;
+    };
+    aliasSets = {
+      "home.shellAliases" = Ct.home.shellAliases;
+      "programs.zsh.shellAliases" = Ct.programs.zsh.shellAliases;
+      "programs.zsh.shellGlobalAliases" = Ct.programs.zsh.shellGlobalAliases;
+      "programs.bash.shellAliases" = Ct.programs.bash.shellAliases;
+    };
+    badVars = lib.concatLists (lib.mapAttrsToList (s: vs: map (n: "${s}.${n}") (lib.filter forbiddenVar (lib.attrNames vs))) varSets);
+    badAliases = lib.concatLists (lib.mapAttrsToList (s: as: lib.optional (as ? claude) "${s}.claude") aliasSets);
+    badPkgs = lib.filter (p: lib.elem (p.meta.mainProgram or null) claudeNames || lib.elem (lib.getName p) claudeNames) Ct.home.packages;
+    claudeOther = lib.filter (t: lib.hasPrefix ".claude" t && !(lib.hasPrefix ".claude/skills/" t)) (tk.targets Ct);
+    problems =
+      map (v: "session variable ${v} (P4)") badVars
+      ++ map (a: "alias ${a} (P5)") badAliases
+      ++ map (p: "package ${lib.getName p} provides claude (P5)") badPkgs
+      ++ map (t: "${t} is under .claude but not a skill link (P3)") claudeOther
+      ++ lib.optional Ct.programs.terminalKit.packages.dev.enable "the dev package set is on";
+    # The generated shell texts: the entry files, <dotDir>/.zsh*, the
+    # redirected bashrc (all under .config/terminal-kit/), and the session
+    # variables script.
+    texts =
+      map (f: {
+        name = f.target;
+        path = "${f.source}";
+      }) (lib.filter (f: f.enable && lib.hasPrefix ".config/terminal-kit/" f.target) (lib.attrValues Ct.home.file))
+      ++ [
+        {
+          name = "hm-session-vars.sh";
+          path = "${Ct.home.sessionVariablesPackage}/etc/profile.d/hm-session-vars.sh";
+        }
+      ];
+    mustScan = [".config/terminal-kit/init.zsh" ".config/terminal-kit/init.bash" ".config/terminal-kit/zsh/.zshrc" ".config/terminal-kit/bash/bashrc"];
+    unscanned = lib.subtractLists (map (t: t.name) texts) mustScan;
+    # POSIX ERE for grep -E (build time, not builtins.match).
+    fnRe = ''(^|[;&|({[:space:]])(function[[:space:]]+claude([[:space:](){]|$)|claude[[:space:]]*\(\))'';
+    aliasRe = ''(^|[;&|[:space:]])alias[[:space:]]+(-[a-zA-Z-]*[[:space:]]+)*['"]?claude['"]?='';
+    exportRe = ''(^|[;&|[:space:]])(export|declare[[:space:]]+-x|typeset[[:space:]]+-x)[[:space:]]+(ANTHROPIC_|CLAUDE_|AWS_)[A-Za-z0-9_]*='';
+  in
+    pkgs.runCommand "claude-noninterference" {nativeBuildInputs = [pkgs.gnugrep];} ''
+      fail=0
+      ${lib.concatMapStrings (p: ''
+          echo ${lib.escapeShellArg "claude-noninterference: ${p}"} >&2; fail=1
+        '')
+        (problems ++ map (t: "${t} is not among the scanned texts") unscanned)}
+      for n in ${toString claudeNames}; do
+        if [ -e ${Ct.home.path}/bin/$n ]; then
+          echo "claude-noninterference: the profile has bin/$n (P5)" >&2; fail=1
+        fi
+      done
+      scan() { # label file-or-directory (the zsh plugins are directories)
+        local hits rc
+        for re in ${lib.escapeShellArg fnRe} ${lib.escapeShellArg aliasRe} ${lib.escapeShellArg exportRe}; do
+          rc=0; hits=$(grep -rnE "$re" "$2") || rc=$?
+          case $rc in
+            0) printf 'claude-noninterference: %s: %s\n' "$1" "$hits" >&2; fail=1 ;;
+            1) ;;
+            *) echo "claude-noninterference: grep failed on $1 ($rc)" >&2; fail=1 ;;
+          esac
+        done
+      }
+      ${lib.concatMapStrings (t: ''
+          scan ${lib.escapeShellArg t.name} ${t.path}
+        '')
+        texts}
+      [ "$fail" = 0 ] || exit 1
+      touch $out
+    '';
+  # --- end final ---
 }
