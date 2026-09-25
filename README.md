@@ -39,11 +39,19 @@ bash ~/workspace-probe.sh compare ~/.cache/terminal-kit-probe/baseline-nolabel-<
 `baseline` appends one line to `~/.zshrc` and `~/.bashrc` while it starts
 the shells, and restores both from a backup (it checks the sha256
 afterwards). It changes nothing else. `terminal` asks you to paste into
-Notepad and answer y or n. `compare` hashes the files again and exits 1 if
-anything differs. After a `sourced` setup, only the two rc files should
-differ, by the snippet you appended. Every report is printed and also saved under
+Notepad and answer y or n. `compare` hashes the files again and shows a
+diff for each changed rc file. After a `sourced` setup, only the two rc files should differ,
+by the snippet you appended. Every report is printed and also saved under
 `~/.cache/terminal-kit-probe/`. Reports contain no environment values,
 URLs, host names or home paths: the repository URL shows up only as a hash.
+
+Every finding is rated OK, INFO, HEADS-UP or BLOCKER. A summary, printed
+last and placed first in the saved report, lists each heads-up and blocker
+with why it matters and what to do. All three commands exit 0 without a
+BLOCKER, 1 with one, 2 on a usage error and 3 if an rc file could not be
+restored. `baseline` keeps private copies of the rc files (mode 600, never
+in a report), so `compare` can print their diff and accept exactly one
+added snippet line as expected.
 
 ## Add to an existing Home Manager flake
 
