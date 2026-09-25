@@ -53,6 +53,13 @@ in
       inherit (tk) Ct Co;
     };
     # --- end sourced ---
+
+    # --- final (T9.3) ---
+    closure-hygiene = import ./closure.nix {
+      inherit pkgs lib;
+      inherit (tk) Ct;
+    };
+    # --- end final ---
   }
   # --- nvim2 (T6.1, T6.3, T7.2): headless Neovim; to the end of file -------
   // import ./nvim.nix {
