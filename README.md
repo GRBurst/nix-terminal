@@ -24,7 +24,9 @@ what the kit assumes about a workspace: that Nix substitutes from
 cache.nixos.org, that interactive shells reach the end of `~/.zshrc` and
 `~/.bashrc`, the shell start time, whether the terminal answers OSC 11 and
 DA1 and passes OSC 52 to the Windows clipboard, and how `pgrep` sees Neovim.
-It needs only bash 4 and the usual coreutils, procps and util-linux.
+It needs only bash 4 and the usual coreutils, procps and util-linux. Run it
+before either setup below: adding the kit to an existing Home Manager flake
+makes the same assumptions as the template.
 
 ```sh
 curl -fsSLo ~/workspace-probe.sh https://raw.githubusercontent.com/GRBurst/nix-terminal/main/scripts/workspace-probe.sh
@@ -38,14 +40,136 @@ bash ~/workspace-probe.sh compare ~/.cache/terminal-kit-probe/baseline-nolabel-<
 the shells, and restores both from a backup (it checks the sha256
 afterwards). It changes nothing else. `terminal` asks you to paste into
 Notepad and answer y or n. `compare` hashes the files again and exits 1 if
-anything differs. After the setup, only the two rc files should differ,
-by the snippet you appended. Every report is printed and also saved under
+anything differs. After a `sourced` setup, only the two rc files should
+differ, by the snippet you appended. Every report is printed and also saved under
 `~/.cache/terminal-kit-probe/`. Reports contain no environment values,
 URLs, host names or home paths: the repository URL shows up only as a hash.
 
-## Quick start: Coder workspace
+## Add to an existing Home Manager flake
 
-On the workspace you need a single-user Nix install and
+If you already have a Home Manager flake, add the kit as one more input and
+one more module. [`examples/existing-flake`](examples/existing-flake) is
+such a flake; the check `existing-flake-example` evaluates it with this
+repository as `nix-terminal`. The lines marked `Added` are the whole change:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # Added: the kit, on your nixpkgs and home-manager.
+    nix-terminal = {
+      url = "github:GRBurst/nix-terminal";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
+  };
+
+  outputs = {nixpkgs, home-manager, nix-terminal, ...}: {
+    homeConfigurations.tester = home-manager.lib.homeManagerConfiguration {
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      modules = [
+        ./home.nix
+        # Added: the kit (it imports nvf and nix-index-database itself).
+        nix-terminal.homeModules.default
+        {
+          programs.terminalKit = {
+            enable = true;
+            shellIntegration = "sourced"; # the image keeps ~/.zshrc and ~/.bashrc
+            clipboard = "osc52";
+            theme.modeSource = "terminal";
+            aiSkills.enable = true;
+          };
+        }
+      ];
+    };
+  };
+}
+```
+
+`home.nix` stands for your existing configuration and stays as it is. In
+the example it installs ripgrep and jq and enables fzf, all three of which
+the kit has as well:
+
+```nix
+{pkgs, ...}: {
+  home = {
+    username = "tester";
+    homeDirectory = "/home/tester";
+    stateVersion = "26.05";
+    packages = [pkgs.ripgrep pkgs.jq];
+  };
+  programs.home-manager.enable = true;
+  programs.fzf.enable = true;
+}
+```
+
+Switch as you always do (`home-manager switch --flake .#<name>`). With
+`shellIntegration = "sourced"`, append the
+[one-time snippet](#the-one-time-snippet) afterwards. If Home Manager runs
+as a NixOS module, put `nix-terminal.homeModules.default` in
+`home-manager.sharedModules` or in the user's `imports` instead.
+
+Things to know:
+
+- Do not import nvf's or nix-index-database's Home Manager module yourself.
+  The kit imports both, and a second import fails the evaluation with
+  ``The option `programs.neovim-flake' … is already declared``. Remove your
+  own import, and your own `nvf`/`nix-index-database` inputs if nothing
+  else uses them.
+- If your configuration enables `programs.zsh` or `programs.bash`, Home
+  Manager writes your rc files today. Either keep them and set
+  `shellIntegration = "owned"` (the default): Home Manager keeps writing the
+  rc files and the kit's settings merge into yours. Or, when the rc files
+  belong to someone else, such as a Coder image, drop them and use
+  `"sourced"`: Home Manager then writes no rc file, and whatever is left
+  under `programs.zsh` and `programs.bash` is loaded through the kit's
+  entry files (your `programs.zsh.dotDir` is overridden).
+- Packages that you and the kit both install (`home.packages`) are
+  harmless: with the `follows` above they come from the same nixpkgs, so
+  they are the same store path.
+- Settings under `programs.<tool>` merge with the kit's. A value that
+  conflicts with the kit's fails the evaluation with the option's name,
+  e.g. ``The option `programs.bat.config.theme' has conflicting definition
+  values``. Set yours with `lib.mkForce` to win.
+- With `follows`, the kit runs on your nixpkgs and home-manager revisions,
+  not on the pins its checks ran against. Drop the two `follows` to use the
+  kit's pins, at the cost of a second nixpkgs.
+
+The kit reads neither `osConfig` nor any Stylix option, and it installs
+every package from your `pkgs`.
+
+## The one-time snippet
+
+With `shellIntegration = "sourced"`, the kit leaves `~/.zshrc` and
+`~/.bashrc` to their owner, and each needs one line that sources the kit's
+entry file. It sources the entry file only when that file is readable, so a
+shell started before `/nix` is mounted still starts, and its exit status is
+0 either way.
+
+`~/.zshrc`:
+
+```sh
+if [ -r "$HOME/.config/terminal-kit/init.zsh" ]; then . "$HOME/.config/terminal-kit/init.zsh"; fi
+```
+
+`~/.bashrc`:
+
+```sh
+if [ -r "$HOME/.config/terminal-kit/init.bash" ]; then . "$HOME/.config/terminal-kit/init.bash"; fi
+```
+
+Every switch checks both files and prints this line for each file that does
+not mention its entry path; it never writes to them. Run
+`terminal-kit-check-snippet` for the same check by hand.
+
+## New setup: Coder workspace template
+
+Without a Home Manager configuration yet, start from the template. On the
+workspace you need a single-user Nix install and
 `experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`.
 
 1. Create the configuration from the template:
@@ -75,25 +199,8 @@ On the workspace you need a single-user Nix install and
    Home Manager refuses to replace a file it did not create; move that file
    away (or add `-b backup`) and switch again.
 
-4. Append the one-time snippet to the image's rc files. It sources the kit's
-   entry file only when that file is readable, so a shell started before
-   `/nix` is mounted still starts, and its exit status is 0 either way.
-
-   `~/.zshrc`:
-
-   ```sh
-   if [ -r "$HOME/.config/terminal-kit/init.zsh" ]; then . "$HOME/.config/terminal-kit/init.zsh"; fi
-   ```
-
-   `~/.bashrc`:
-
-   ```sh
-   if [ -r "$HOME/.config/terminal-kit/init.bash" ]; then . "$HOME/.config/terminal-kit/init.bash"; fi
-   ```
-
-   Every switch checks both files and prints this line for each file that
-   does not mention its entry path; it never writes to them. Run
-   `terminal-kit-check-snippet` for the same check by hand.
+4. Append the [one-time snippet](#the-one-time-snippet) to `~/.zshrc` and
+   `~/.bashrc`.
 
 What the template sets (`home.nix`):
 
@@ -109,24 +216,6 @@ programs.terminalKit = {
   # No git identity: the workspace keeps its own.
 };
 ```
-
-## Using the module in your own flake
-
-```nix
-{
-  inputs.nix-terminal.url = "github:GRBurst/nix-terminal";
-  # To share your nixpkgs/home-manager, add `follows` for them.
-
-  outputs = {nix-terminal, ...}: {
-    # in a homeManagerConfiguration, or in home-manager.sharedModules:
-    #   modules = [nix-terminal.homeModules.default {programs.terminalKit.enable = true;}];
-  };
-}
-```
-
-The module imports nvf's and nix-index-database's Home Manager modules
-itself; do not import them a second time. It reads neither `osConfig` nor
-any Stylix option, and it installs every package from your `pkgs`.
 
 ## Options
 
@@ -275,7 +364,8 @@ nix flake check --keep-going
 ```
 
 The checks evaluate two configurations with the real Home Manager: the
-template, unedited, and an `owned` configuration with every option on. They
+template, unedited, and an `owned` configuration with every option on; and
+they evaluate the example of an existing flake with the kit added. They
 run the sourced shells in a scratch `$HOME` (silent start, nested shells,
 missing entry file, the snippet check), the workspace probe (shellcheck and
 a run of `baseline` in a scratch `$HOME`), headless Neovim (theme, mode

@@ -91,6 +91,25 @@
   # Messages of the failed conditions in `cs` (a list of [cond msg]).
   failures = cs: map (c: builtins.elemAt c 1) (builtins.filter (c: !(builtins.head c)) cs);
   # --- end tmpl ---
+
+  # The rc files a Coder image owns: `sourced` mode writes none of them (P2).
+  imageRcFiles = [".zshrc" ".zshenv" ".zprofile" ".bashrc" ".profile" ".bash_profile" ".bash_logout"];
+
+  # --- existing flake ---
+  # The README's primary path: the kit added to an existing Home Manager
+  # flake, whose own nixpkgs and home-manager the kit follows. Evaluated
+  # offline like the template, with this flake as `nix-terminal` and this
+  # flake's nixpkgs and home-manager as the consumer's (what `follows`
+  # resolves to).
+  exampleDir = "${self}/examples/existing-flake";
+  exampleFlakePresent = builtins.pathExists "${exampleDir}/flake.nix";
+  exampleFlake = import "${exampleDir}/flake.nix";
+  exampleOutputs = exampleFlake.outputs {
+    self = exampleOutputs // {outPath = exampleDir;};
+    nix-terminal = self;
+    inherit (self.inputs) nixpkgs home-manager;
+  };
+  # --- end existing flake ---
 in {
   # R2, D11, D12, P15: the kit reads neither `osConfig` nor any Stylix
   # option, so it evaluates the same standalone and inside NixOS.
@@ -99,7 +118,7 @@ in {
     hits=$TMPDIR/hits
     cd ${self}
     dirs=()
-    for d in modules lib packages templates; do
+    for d in modules lib packages templates examples; do
       if [ -d "$d" ]; then dirs+=("$d"); fi
     done
     rc=1 # no dirs: nothing to find
@@ -587,6 +606,49 @@ in {
     '';
   # --- end tmpl ---
 
+  # --- existing flake ---
+  # The README's "Add to an existing Home Manager flake" path composes: the
+  # example's home configuration evaluates with the kit next to a user's own
+  # config; the packages both install (ripgrep, jq) are one store path each;
+  # the user's `programs.fzf.enable` merges with the kit's; `sourced` mode
+  # writes no image rc file; and the kit follows the user's nixpkgs and
+  # home-manager. A second import of nvf's module is an evaluation error.
+  existing-flake-example = let
+    lib = pkgs.lib;
+    ins = exampleFlake.inputs or {};
+    hcs = exampleOutputs.homeConfigurations or {};
+    hc = hcs.tester or null;
+    c = hc.config;
+    ok = exampleFlakePresent && hc != null;
+    overlapping = ["ripgrep" "jq"];
+    named = n: lib.filter (p: lib.getName p == n) c.home.packages;
+    distinctOuts = n: lib.unique (map (p: p.outPath) (named n));
+    notOnce = lib.filter (n: lib.length (distinctOuts n) != 1) overlapping;
+    notOverlapping = lib.filter (n: lib.length (named n) < 2) overlapping;
+    rcWritten = lib.filter (t: lib.elem t imageRcFiles) (tk.targets c);
+    problems =
+      failures [
+        [exampleFlakePresent "examples/existing-flake/flake.nix does not exist"]
+        [(exampleFlakePresent && (ins.nix-terminal.url or null) == "github:GRBurst/nix-terminal") "inputs.nix-terminal.url is not github:GRBurst/nix-terminal"]
+        [(exampleFlakePresent && (ins.nix-terminal.inputs.nixpkgs.follows or null) == "nixpkgs") "inputs.nix-terminal.inputs.nixpkgs does not follow nixpkgs"]
+        [(exampleFlakePresent && (ins.nix-terminal.inputs.home-manager.follows or null) == "home-manager") "inputs.nix-terminal.inputs.home-manager does not follow home-manager"]
+        [(exampleFlakePresent && (ins.home-manager.inputs.nixpkgs.follows or null) == "nixpkgs") "inputs.home-manager.inputs.nixpkgs does not follow nixpkgs"]
+        [(exampleFlakePresent && builtins.attrNames hcs == ["tester"]) "homeConfigurations is not exactly [tester]"]
+      ]
+      # Only with a configuration to read: the messages below force it.
+      ++ lib.optionals ok (failures [
+        [(builtins.isString c.home.activationPackage.drvPath) "the activation package does not evaluate"]
+        [c.programs.terminalKit.enable "programs.terminalKit.enable is off"]
+        [(c.programs.terminalKit.shellIntegration == "sourced") "shellIntegration is not sourced"]
+        [(notOverlapping == []) "not installed by both the user and the kit: ${toString notOverlapping}"]
+        [(notOnce == []) "overlapping packages with more than one store path: ${toString notOnce}"]
+        [c.programs.fzf.enable "programs.fzf.enable is off"]
+        [(rcWritten == []) "sourced mode writes image rc files: ${toString rcWritten}"]
+      ]);
+  in
+    mkCheck "existing-flake-example" (problems == []) "existing-flake-example: ${lib.concatStringsSep "; " problems}";
+  # --- end existing flake ---
+
   # D23, PD12: the kit's 79 keymaps (the private flake's 80 minus the private
   # `<leader>vv`) come first, and `nvf.extraKeymaps` follow them.
   nvf-extra-keymaps = let
@@ -755,7 +817,7 @@ in {
   # image rc file; the two entry files, the redirected bashrc and
   # <dotDir>/.zshrc exist. Cₒ (`owned`) keeps its rc files.
   sourced-no-rc-files = let
-    rc = [".zshrc" ".zshenv" ".zprofile" ".bashrc" ".profile" ".bash_profile" ".bash_logout"];
+    rc = imageRcFiles;
     entries = [
       ".config/terminal-kit/init.zsh"
       ".config/terminal-kit/init.bash"

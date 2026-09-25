@@ -24,6 +24,7 @@ lib/style/                  palettes and renderers, pure ({lib} only)
 modules/terminal-kit/       default.nix (options) + one file per feature
 packages/alacritty-theme.nix
 templates/coder/            flake.nix, user.nix (the only file to edit), home.nix
+examples/existing-flake/    an existing Home Manager flake with the kit added (README)
 checks/                     lib.nix (test configurations) + one file per area
 .github/workflows/check.yml CI: nix flake check --keep-going
 ```
@@ -158,6 +159,21 @@ checks is built from the same `user.nix` and `home.nix`, and
 `template-evaluates` asserts that the template flake's activation package is
 `Ct`'s, so every check over `Ct` covers what a workspace builds.
 
+## The existing-flake example
+
+`examples/existing-flake` is the README's primary path: an existing Home
+Manager flake (`home.nix` with ripgrep, jq and fzf of its own) with the kit
+added as an input that follows the flake's `nixpkgs` and `home-manager`,
+and as a module next to `home.nix`. It is a directory, not a flake output,
+and has no `flake.lock`. `existing-flake-example` imports its `flake.nix`
+and calls `outputs` with this flake as `nix-terminal` and this flake's
+`nixpkgs` and `home-manager` as the consumer's, which is what the
+`follows` resolve to. It asserts the two `follows`, that the configuration
+evaluates to an activation package, that each package both sides install
+is a single store path, that the user's `programs.fzf.enable` holds, and
+that `sourced` mode writes none of the image rc files. A second import of
+nvf's module, the most likely mistake, makes it an evaluation error.
+
 ## Checks
 
 `nix flake check --keep-going`; each check fails at build time with a
@@ -172,7 +188,7 @@ is the template, unedited (`sourced`, `osc52`); `Co` has every option on
 | Theme | `nvf-theme-terminal`, `mode-command`, `mode-command-installed`, `mode-signal` |
 | Clipboard | `clipboard-osc52-eval`, `clipboard-osc52-paste`, `zsh-osc52-plugins`, `zsh-osc52-encode`, `closure-hygiene` |
 | Agent skills and Claude Code | `ai-skills-links`, `ai-skills-inventory`, `claude-noninterference` |
-| The template flake, evaluated offline with this flake as `nix-terminal` | `template-evaluates`, `template-exposes-hm-cli` |
+| The template flake and the existing-flake example, evaluated offline with this flake as `nix-terminal` | `template-evaluates`, `template-exposes-hm-cli`, `existing-flake-example` |
 | Pure library and build output | `style-palette`, `style-templates`, `style-base16`, `alacritty-theme` (TOML round trip, no store path) |
 | Repository and publication | `leaks`, `no-os-config`, `formatting` (Alejandra), `ci-workflow-lint` (actionlint), `outputs-shape` (exactly the documented output groups, MIT metadata, LICENSE), `readme-options`, `workspace-probe` (the phase-0 probe script: shellcheck, a scratch-`$HOME` run of `baseline` and `compare`) |
 
