@@ -1,12 +1,10 @@
 # nix-terminal
 
-> **Draft.** The kit is still being built. Everything marked *(planned)* is the
-> intended behaviour, not what the module does today.
-
-A Home Manager module with a terminal kit: zsh and bash, git, Neovim (nvf),
-CLI tools and the enfocado theme. It is made for machines where Home Manager
-must not take over the shell, such as a Coder workspace with its own image
-`~/.zshrc`, and it works just as well as an ordinary Home Manager module.
+A Home Manager module with a terminal kit: zsh and bash, git and tig, Neovim
+(nvf), yazi, CLI tools and the enfocado theme. It is made for machines where
+Home Manager must not take over the shell, such as a Coder workspace whose
+image owns `~/.zshrc`, and it works just as well as an ordinary Home Manager
+module.
 
 ## Outputs
 
@@ -21,8 +19,8 @@ must not take over the shell, such as a Coder workspace with its own image
 
 ## Quick start: Coder workspace
 
-You need a single-user Nix install and `experimental-features = nix-command
-flakes` in `~/.config/nix/nix.conf`.
+On the workspace you need a single-user Nix install and
+`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`.
 
 1. Create the configuration from the template:
 
@@ -40,22 +38,20 @@ flakes` in `~/.config/nix/nix.conf`.
    | `homeDirectory` | `/home/coder` | `home.homeDirectory` |
    | `stateVersion` | `26.05` | `home.stateVersion` |
 
-3. Switch with the `home-manager` CLI the template pins (the same revision
-   the kit was checked against). The switch also installs that CLI into
-   your profile for later runs:
+3. Switch with the `home-manager` CLI the template pins (the revision the
+   kit's checks ran against). The switch also installs that CLI, so later
+   runs are `home-manager switch --flake ~/.config/home-manager`:
 
    ```sh
    nix run ~/.config/home-manager#home-manager -- switch --flake ~/.config/home-manager
    ```
 
    Home Manager refuses to replace a file it did not create; move that file
-   away and switch again.
+   away (or add `-b backup`) and switch again.
 
-4. Add the one-time snippet to the end of the image's rc files. The entry
-   files it sources come with `sourced` mode *(planned)*. It sources
-   the kit's entry file only when that file is readable, so a shell started
-   before `/nix` is mounted still starts cleanly, and the snippet's exit
-   status is 0 either way.
+4. Append the one-time snippet to the image's rc files. It sources the kit's
+   entry file only when that file is readable, so a shell started before
+   `/nix` is mounted still starts, and its exit status is 0 either way.
 
    `~/.zshrc`:
 
@@ -69,8 +65,9 @@ flakes` in `~/.config/nix/nix.conf`.
    if [ -r "$HOME/.config/terminal-kit/init.bash" ]; then . "$HOME/.config/terminal-kit/init.bash"; fi
    ```
 
-   *(planned)* Every switch checks both files and prints the snippet for each
-   file that lacks it. It never writes to them.
+   Every switch checks both files and prints this line for each file that
+   does not mention its entry path; it never writes to them. Run
+   `terminal-kit-check-snippet` for the same check by hand.
 
 What the template sets (`home.nix`):
 
@@ -83,7 +80,7 @@ programs.terminalKit = {
   theme.modeSource = "terminal";
   aiSkills.enable = true;
   packages.dev.enable = false;
-  # no git identity: the workspace keeps its own
+  # No git identity: the workspace keeps its own.
 };
 ```
 
@@ -101,73 +98,95 @@ programs.terminalKit = {
 }
 ```
 
-The module imports nvf's and nix-index-database's Home Manager modules itself,
-exactly once; do not import them a second time. It reads neither `osConfig`
-nor any Stylix option, and it installs every package from your `pkgs`.
+The module imports nvf's and nix-index-database's Home Manager modules
+itself; do not import them a second time. It reads neither `osConfig` nor
+any Stylix option, and it installs every package from your `pkgs`.
 
 ## Options
 
 All under `programs.terminalKit`. Everything is on once `enable = true`,
-except the `dev` package set and agent skills.
+except the `dev` package set and agent skills. The check `readme-options`
+keeps this table and the option tree in step.
 
-| Option | Default | Status |
+| Option | Default | Meaning |
 | --- | --- | --- |
-| `enable` | `false` | available |
-| `packages.general.enable` | `true` | available: htop, iotop, lsof, wget, ripgrep, fd, tree, unzip, zip, file, jq |
-| `packages.dev.enable` | `false` | available: clang, gnumake, cmake, nodejs, docker-compose, direnv, devenv (see [Claude Code](#claude-code)) |
-| `tools.<name>.enable`, name ∈ `bat btop lazygit fzf starship zoxide direnv nixIndex` | `true` | available |
-| `yazi.enable` | `true` | *(planned)* yazi with enfocado flavors |
-| `git.enable`, `git.{name,email,signingKey,githubUser}`, `git.extraAliases`, `git.includes` | on, identity `null` | *(planned)* with `null` identity values no identity, signing or sign-off is written |
-| `zsh.enable`, `zsh.extraAliases`, `zsh.extraInit`, `zsh.historyPath` | on, history `<XDG state home>/zsh/history` | *(planned)* |
-| `bash.enable`, `bash.extraAliases` | on | *(planned)* |
-| `shellIntegration` | `"owned"` | *(planned)* `owned` or `sourced`, see below |
-| `nvf.enable`, `nvf.extraKeymaps` | on | *(planned)* Neovim through nvf, with the Nix LSP `nil` |
-| `theme.enable`, `theme.modeSource`, `theme.nvf.enfocadoStyle` | on, `"terminal"`, `"nature"` | *(planned)* see below |
-| `clipboard` | `"system"` | *(planned)* `system` or `osc52`, see below |
-| `aiSkills.enable`, `aiSkills.skills` | off | *(planned)* see below |
+| `enable` | `false` | the kit |
+| `shellIntegration` | `"owned"` | `"owned"` or `"sourced"`, see [Shell integration](#shell-integration) |
+| `clipboard` | `"system"` | `"system"` or `"osc52"`, see [Clipboard](#clipboard) |
+| `packages.general.enable` | `true` | htop, iotop, lsof, wget, ripgrep, fd, tree, unzip, zip, file, jq |
+| `packages.dev.enable` | `false` | clang, gnumake, cmake, nodejs, docker-compose, direnv, devenv (see [Claude Code](#claude-code)) |
+| `tools.bat.enable`, `tools.btop.enable`, `tools.lazygit.enable`, `tools.fzf.enable`, `tools.starship.enable`, `tools.zoxide.enable`, `tools.direnv.enable`, `tools.nixIndex.enable` | `true` | one switch per tool; direnv with nix-direnv, nix-index with nix-index-database |
+| `yazi.enable` | `true` | yazi (shell wrapper `yy`) with the enfocado flavors |
+| `yazi.flavorOverrides` | `{}` | TOML merged into the flavors: `shared`, `light`, `dark` |
+| `git.enable` | `true` | git with the kit's settings and aliases, and tig |
+| `git.name`, `git.email` | `null` | `user.name`, `user.email`; with both set, commits get a sign-off |
+| `git.signingKey` | `null` | OpenPGP key id; set, commits and tags are signed |
+| `git.githubUser` | `null` | GitHub user of the `clus` alias; `null` omits it |
+| `git.extraAliases` | `{}` | merged into the git aliases |
+| `git.includes` | `[]` | passed to `programs.git.includes` |
+| `git.tigExtraConfig` | `""` | appended to the kit's `tig/config` |
+| `zsh.enable` | `true` | zsh in vi mode, with the kit's aliases and plugins |
+| `zsh.extraAliases` | `{}` | merged into the zsh aliases |
+| `zsh.extraInit` | `""` | appended to the zsh init, after the kit's own |
+| `zsh.historyPath` | `<XDG state home>/zsh/history` | the history file |
+| `bash.enable` | `true` | bash |
+| `bash.extraAliases` | `{}` | the bash aliases |
+| `nvf.enable` | `true` | Neovim through nvf, with the Nix language server `nil` |
+| `nvf.extraKeymaps` | `[]` | appended after the kit's keymaps |
+| `theme.enable` | `true` | vim-enfocado in Neovim, enfocado flavors in yazi |
+| `theme.modeSource` | `"terminal"` | `"terminal"` or `"file"`, see [Theme](#theme) |
+| `theme.nvf.enfocadoStyle` | `"nature"` | `vim.g.enfocado_style` |
+| `aiSkills.enable` | `false` | links the curated agent skills, see [Agent skills](#agent-skills) |
+| `aiSkills.skills` | `{}` | your own skills, merged with the curated set |
 
-### Shell integration *(planned)*
+### Shell integration
 
-- `owned`: Home Manager writes `~/.zshrc`, `~/.bashrc` and the other rc files,
-  as usual.
-- `sourced`: Home Manager writes no file at `~/.zshrc`, `~/.zshenv`,
+- `owned`: Home Manager writes the rc files as usual: `~/.zshenv` (which
+  points zsh at `~/.config/zsh`), `~/.bashrc`, `~/.profile` and
+  `~/.bash_profile`.
+- `sourced`: Home Manager writes nothing at `~/.zshrc`, `~/.zshenv`,
   `~/.zprofile`, `~/.bashrc`, `~/.profile`, `~/.bash_profile` or
   `~/.bash_logout`. It writes the entry files
   `~/.config/terminal-kit/init.zsh` and `init.bash`, which the one-time
   snippet sources. An entry file never sources an image rc file, does not
-  export `ZDOTDIR`, adds nothing twice when sourced twice (nested shells),
-  and prints nothing when stdout is not a terminal, so probes such as VS
-  Code's `zsh -ilc env` see a silent shell.
+  export `ZDOTDIR`, adds nothing to `PATH` twice in nested shells, and
+  prints nothing when stdout is not a terminal, so probes such as VS Code's
+  `zsh -ilc env` see a silent shell.
 
-### Theme *(planned)*
+### Theme
 
+The CLI tools use the terminal's 16 ANSI colours and follow its palette.
 Neovim uses vim-enfocado in light or dark mode:
 
-- `theme.modeSource = "file"`: the state file `$XDG_STATE_HOME/my-theme/mode`
-  (`light` or `dark`) decides.
-- `theme.modeSource = "terminal"`: the terminal's background decides, unless
-  the state file exists. The command `nix-terminal-mode light|dark|auto`
-  writes or removes the state file and tells running Neovim instances;
-  `auto` returns to the terminal's background. Any other argument exits 64
-  with a usage message.
+- `theme.modeSource = "terminal"`: the terminal's background decides,
+  unless the state file `$XDG_STATE_HOME/my-theme/mode` (`light` or `dark`)
+  exists. `nix-terminal-mode light` or `dark` writes the state file and
+  switches running Neovim instances; `nix-terminal-mode auto` removes it, so
+  Neovim started afterwards follows the terminal again (running instances
+  keep their mode). Any other argument exits 64 with a usage message.
+- `theme.modeSource = "file"`: the state file decides (`light` when it is
+  missing); something else, such as darkman, writes it and sends Neovim
+  `SIGUSR1`. `nix-terminal-mode` is not installed.
 
-The CLI tools use the terminal's 16 ANSI colours, so they follow the terminal
-palette (available).
-
-### Clipboard *(planned)*
+### Clipboard
 
 - `clipboard = "system"`: Neovim and zsh use the X11/Wayland clipboard.
-- `clipboard = "osc52"`: for a terminal on another machine. Neovim's `+` and
-  `*` registers and zsh's vi-mode yank are sent to the terminal clipboard
-  with OSC 52. It is copy-only: a paste comes from the last yank and never
-  asks the terminal, so `p` never waits. No X11/Wayland clipboard tool is
-  installed.
+- `clipboard = "osc52"`: for a terminal on another machine. Neovim's yanks
+  (the `+` and `*` registers, which plain `y` uses) and zsh's vi-mode yanks
+  are sent to the terminal's clipboard with OSC 52. It is copy-only: a
+  paste inside Neovim returns the last yank and never asks the terminal, so
+  `p` never waits; paste from Windows with the terminal's own paste key. No
+  X11/Wayland clipboard tool is installed. Alacritty accepts OSC 52 copies
+  by default.
 
-### Agent skills *(planned)*
+### Agent skills
 
-`aiSkills.enable = true` links a curated set of agent skills into
-`~/.agents/skills/<name>` and `~/.claude/skills/<name>`; `aiSkills.skills`
-adds your own. Nothing else under `~/.claude` is touched.
+`aiSkills.enable = true` links a curated set (14 skills from
+[obra/superpowers](https://github.com/obra/superpowers), `xp-clean-code`
+and `karpathy-guidelines`) into `~/.agents/skills/<name>` and
+`~/.claude/skills/<name>`; `aiSkills.skills` adds your own (the attribute
+name must equal the skill's `name`). Nothing else under `~/.claude` is
+touched.
 
 ## Claude Code
 
@@ -176,9 +195,9 @@ The template leaves a pre-installed Claude Code alone: it installs no
 `ANTHROPIC_*`, `CLAUDE_*` or `AWS_*` variable, creates nothing under
 `~/.claude` except skill links, and keeps the `dev` package set off.
 
-The `dev` package set contains `nodejs`. Once the kit's profile is on `PATH`
-in front of the image's directories, that `node` can shadow the Node.js a
-pre-installed Claude Code runs on. Check before you enable it:
+The `dev` package set contains `nodejs`. The kit's profile comes first on
+`PATH`, so its `node` can shadow the Node.js a pre-installed Claude Code runs
+on. Check before you enable it:
 
 ```sh
 head -n 1 "$(command -v claude)"   # '#!/usr/bin/env node' means: the first node on PATH
@@ -202,13 +221,17 @@ works on a machine without Nix. Build it on the workspace:
 nix build github:GRBurst/nix-terminal#alacritty-theme-enfocado-dark --out-link ~/enfocado-dark
 ```
 
-and copy it from Windows `cmd`, with `ws` your ssh host for the workspace:
+and copy it from Windows `cmd`, with `ws` the workspace's ssh host (for
+example `coder.<workspace>` after `coder config-ssh`):
 
 ```bat
+if not exist "%APPDATA%\alacritty" mkdir "%APPDATA%\alacritty"
 scp ws:enfocado-dark/enfocado-dark.toml "%APPDATA%\alacritty\enfocado-dark.toml"
 ```
 
-Then import it in `%APPDATA%\alacritty\alacritty.toml`:
+Then import it in `%APPDATA%\alacritty\alacritty.toml` (create the file if
+it does not exist; `[general]` and imports relative to this file need
+alacritty 0.14 or later):
 
 ```toml
 [general]
@@ -216,7 +239,8 @@ import = ["enfocado-dark.toml"]
 ```
 
 Use `alacritty-theme-enfocado-light` and `enfocado-light.toml` for the light
-variant. Switching between them on Windows is manual.
+variant. Switching between them on Windows is manual; with
+`theme.modeSource = "terminal"` Neovim on the workspace follows.
 
 ## Checks
 
@@ -225,11 +249,16 @@ nix flake check --keep-going
 ```
 
 The checks evaluate two configurations with the real Home Manager: the
-template, unedited, and an "owned" test configuration with every option on.
-They also scan the repository for personal data (e-mail addresses, key ids,
-home paths), check the palettes and theme packages, the template flake, the
-output groups, the formatting (Alejandra) and the CI workflow (actionlint).
-CI runs the same command on every push (`.github/workflows/check.yml`).
+template, unedited, and an `owned` configuration with every option on. They
+run the sourced shells in a scratch `$HOME` (silent start, nested shells,
+missing entry file, the snippet check), headless Neovim (theme, mode
+signal, OSC 52 clipboard) and `nix-terminal-mode`; they check the template's
+closure for GUI toolkits and clipboard tools, the Claude Code guarantees
+above, the palettes and theme packages, the template flake, the output
+groups, this README's option table, the formatting (Alejandra) and the CI
+workflow (actionlint), and they scan the repository for personal data
+(e-mail addresses, key ids, home paths). CI runs the same command on every
+push (`.github/workflows/check.yml`).
 
 Design notes: [docs/architecture.md](docs/architecture.md).
 
@@ -237,8 +266,8 @@ Design notes: [docs/architecture.md](docs/architecture.md).
 
 MIT, see [LICENSE](LICENSE).
 
-- The enfocado palette comes from
+- The enfocado palette and the Neovim colour scheme come from
   [vim-enfocado](https://github.com/wuelnerdotexe/vim-enfocado) (MIT).
 - Portions are adapted from
-  [Home Manager](https://github.com/nix-community/home-manager) (MIT); files
-  that contain them say so.
+  [Home Manager](https://github.com/nix-community/home-manager) (MIT); the
+  files that contain them say so.

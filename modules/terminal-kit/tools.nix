@@ -49,6 +49,8 @@ in {
         # at every start (R5).
         enableZshIntegration = false;
       };
+      # The block below is adapted from Home Manager modules/programs/fzf.nix,
+      # MIT, Copyright (c) Home Manager contributors.
       programs.zsh.initContent = lib.mkOrder 910 ''
         if [[ $options[zle] = on && -t 0 ]]; then
           source <(${lib.getExe config.programs.fzf.package} --zsh)

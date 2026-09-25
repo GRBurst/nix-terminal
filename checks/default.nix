@@ -60,6 +60,11 @@ in
       inherit (tk) Ct;
     };
     # --- end final ---
+
+    readme-options = import ./readme-options.nix {
+      inherit pkgs lib self;
+      inherit (tk.ownedHome) options;
+    };
   }
   # --- nvim2 (T6.1, T6.3, T7.2): headless Neovim; to the end of file -------
   // import ./nvim.nix {
