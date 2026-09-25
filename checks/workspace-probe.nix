@@ -62,6 +62,33 @@ in
     if bash ${script} compare "$report" </dev/null >cmp 2>&1; then cat cmp; fail "compare missed a change"; fi
     grep -q 'CHANGED.*~/.zshrc' cmp || { cat cmp; fail "compare did not name ~/.zshrc"; }
 
+    # Regression (user report, H0.2 hung): run under a pty, i.e. with a
+    # controlling terminal as on a workspace. An rc file that touches the
+    # terminal must not stop the probe (background process group + SIGTTIN),
+    # and one that ignores SIGTERM (as an interactive shell does) must still
+    # be ended. TK_PROBE_TIMEOUT shortens the per-shell timeout for the test;
+    # the outer `timeout -s KILL` turns a hang into a failure.
+    export HOME=$PWD/ttyhome
+    mkdir -p "$HOME"
+    printf 'true\n' > "$HOME/.zshrc"
+    printf 'read -r -t 300 _ </dev/tty 2>/dev/null || true\n' > "$HOME/.bashrc"
+    before=$(cd "$HOME" && sha256sum .zshrc .bashrc)
+    rc=0
+    TK_PROBE_TIMEOUT=3 timeout -s KILL 120 \
+      script -qec "bash ${script} baseline" /dev/null </dev/null >ttyout 2>&1 || rc=$?
+    [ "$rc" = 0 ] || { cat ttyout; fail "baseline under a pty exited $rc (137 = hung, killed)"; }
+    grep -q 'H0.2 ~/.bashrc: end reached' ttyout || { cat ttyout; fail "pty: bashrc end not reached"; }
+    [ "$before" = "$(cd "$HOME" && sha256sum .zshrc .bashrc)" ] || fail "pty: rc files changed"
+
+    printf 'trap "" TERM; sleep 300\n' > "$HOME/.bashrc"
+    before=$(cd "$HOME" && sha256sum .zshrc .bashrc)
+    rc=0
+    TK_PROBE_TIMEOUT=3 timeout -s KILL 120 \
+      script -qec "bash ${script} baseline" /dev/null </dev/null >ttyout 2>&1 || rc=$?
+    [ "$rc" = 0 ] || { cat ttyout; fail "baseline with a TERM-ignoring rc exited $rc (137 = hung, killed)"; }
+    grep -q 'H0.2 ~/.bashrc: end NOT reached .*timed out' ttyout || { cat ttyout; fail "TERM-ignoring rc: no timeout reported"; }
+    [ "$before" = "$(cd "$HOME" && sha256sum .zshrc .bashrc)" ] || fail "TERM-ignoring rc: rc files changed"
+
     # a .zshrc owned by the store is refused and left alone
     export HOME=$PWD/storehome
     mkdir -p "$HOME"

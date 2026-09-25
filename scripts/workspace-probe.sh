@@ -103,11 +103,23 @@ sha_stdin() {
 
 rand() { od -An -N4 -tx1 /dev/urandom | tr -d ' \n'; }
 
-# timeout(1) if present; a probe must not hang on a slow rc file
+# A probe must not hang on a slow or terminal-reading rc file.
+# - setsid: a new session without a controlling terminal. Without it,
+#   timeout(1) runs the command in a background process group, and an
+#   interactive shell whose rc file touches the terminal is stopped by
+#   SIGTTIN and never finishes.
+# - timeout -k 5: an interactive shell ignores SIGTERM, so KILL follows.
+# TK_PROBE_TIMEOUT overrides every timeout (used by the check).
 tmo() {
-  local s=$1
+  local s=${TK_PROBE_TIMEOUT:-$1}
   shift
-  if have timeout; then timeout "$s" "$@"; else "$@"; fi
+  if have setsid && have timeout; then
+    setsid -w timeout -k 5 "$s" "$@"
+  elif have timeout; then
+    timeout -k 5 "$s" "$@"
+  else
+    "$@"
+  fi
 }
 
 now_us() {
@@ -210,8 +222,8 @@ h02_run() {
   extra=$({ grep -vF -- "$marker" "$o" || true; } | wc -c | tr -d ' ')
   if grep -qF -- "$marker" "$o"; then
     say "H0.2 ~/${f##*/}: end reached by '$sh $flags' (other output: $extra bytes)"
-  elif [ "$rc" = 124 ]; then
-    say "H0.2 ~/${f##*/}: end NOT reached by '$sh $flags' (timed out after 60 s)"
+  elif [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
+    say "H0.2 ~/${f##*/}: end NOT reached by '$sh $flags' (timed out after ${TK_PROBE_TIMEOUT:-60} s)"
   else
     say "H0.2 ~/${f##*/}: end NOT reached by '$sh $flags' (exit $rc, other output: $extra bytes)"
   fi
